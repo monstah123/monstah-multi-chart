@@ -42,7 +42,20 @@ header {
   border-bottom: 1px solid var(--border);
   flex: none;
 }
-.brand { font-weight: 600; letter-spacing: 0.02em; color: var(--accent); }
+.brand {
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  color: #00ff88;
+  text-shadow: 0 0 1px #00ff88, 0 0 2px #00ff88;
+  animation: brandSweep 4s ease-in-out infinite;
+}
+@keyframes brandSweep {
+  0%   { text-shadow: 0 0 1px #00ff88, 0 0 2px #00ff88; }
+  20%  { text-shadow: 1px 0 2px #00ff88, 2px 0 4px #00ff88, 3px 0 6px #00cc6e; }
+  50%  { text-shadow: -1px 0 2px #00ff88, -2px 0 4px #00ff88, -3px 0 6px #00cc6e; }
+  80%  { text-shadow: 0 0 1px #00ff88, 0 0 2px #00ff88; }
+  100% { text-shadow: 0 0 1px #00ff88, 0 0 2px #00ff88; }
+}
 #symbolInput {
   width: 130px;
   padding: 5px 8px;
@@ -118,6 +131,12 @@ button:hover { background: var(--btn-hover); }
   border-radius: 8px;
   color: var(--text-dim);
   cursor: pointer;
+}
+#sideBar .tool-btn svg {
+  width: 20px;
+  height: 20px;
+  stroke: currentColor;
+  flex-shrink: 0;
 }
 #sideBar .tool-btn:hover { background: rgba(255,255,255,0.07); border-color: rgba(255,255,255,0.10); }
 #sideBar .tool-btn.active { background: rgba(41, 98, 255, 0.32); border-color: var(--accent); color: var(--accent); }
@@ -204,7 +223,7 @@ main#viewport {
 }
 .price.up { color: var(--green); }
 .price.down { color: var(--red); }
-.countdown { font-size: 11px; color: #7f8ca3; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.countdown { font-size: 11px; color: #ffffff; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .countdown.closed { color: var(--gold); }
 select {
   background: var(--input-bg);
@@ -233,6 +252,25 @@ button.expand-btn {
   color: #a3adb8;
 }
 button.expand-btn:hover { background: rgba(255,255,255,0.08); color: #fff; }
+
+/* Fullscreen badge — fixed overlay on body, shows symbol + timeframe clearly */
+.fs-badge {
+  position: fixed;
+  top: 64px;       /* below topbar (48px) + 16px */
+  left: 24px;
+  z-index: 6000;   /* above everything */
+  padding: 8px 16px;
+  background: rgba(16, 22, 28, 0.95);
+  border: 2px solid var(--accent);
+  border-radius: 8px;
+  font-weight: 800;
+  font-size: 15px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--accent);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.6);
+  pointer-events: none;
+}
 
 /* ── grouped symbol dropdown + layout dropdown ── */
 .dd { position: relative; }
@@ -534,7 +572,7 @@ header .brand { font-size: 12px; white-space: nowrap; }
   header { column-gap: 6px; }
 }
 
-/* -- theme variables (Midnight default � Black OLED � Daylight) -- */
+/* -- theme variables (Midnight default � Black OLED � Daylight) -- */
 body {
   --input-bg: #0a0f17;
   --btn-bg: #1a2130;

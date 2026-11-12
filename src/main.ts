@@ -554,25 +554,26 @@ window.addEventListener("keydown", (e: KeyboardEvent) => {
 
 // ─── drawing toolbar (left rail) ──────────────────────────────────────
 // Anchors are time+price so drawings survive pan/zoom/timeframe switches.
-const TOOL_DEFS: { id: ToolId; glyph: string; title: string }[] = [
-  { id: "cross", glyph: "✚", title: "cursor & pan (default)" },
-  { id: "dot", glyph: "●", title: "dot marker" },
-  { id: "arrow", glyph: "➤", title: "arrow" },
-  { id: "trend", glyph: "╱", title: "trend line" },
-  { id: "ray", glyph: "→", title: "ray (extends right)" },
-  { id: "hline", glyph: "─", title: "horizontal line" },
-  { id: "vline", glyph: "│", title: "vertical line" },
-  { id: "measure", glyph: "⤢", title: "measure move (%Δ)" },
-  { id: "rect", glyph: "▭", title: "rectangle" },
-  { id: "fib", glyph: "F", title: "fib retracement" },
-  { id: "fibext", glyph: "⇗", title: "fibonacci extension (3 clicks)" },
-  { id: "channel", glyph: "═", title: "parallel channel (3 clicks)" },
-  { id: "pitchfork", glyph: "⋔", title: "andrews pitchfork (3 clicks)" },
-  { id: "position", glyph: "▤", title: "long/short position tool (3 clicks)" },
-  { id: "brush", glyph: "✎", title: "brush — freehand (drag)" },
-  { id: "alert", glyph: "🔔", title: "price alert — click a level" },
-  { id: "text", glyph: "T", title: "text label" },
-  { id: "eraser", glyph: "⌫", title: "eraser (click a drawing)" },
+// Icons are TradingView-style minimal line icons (24×24 viewBox, 2px stroke)
+const TOOL_DEFS: { id: ToolId; svg: string; title: string }[] = [
+  { id: "cross", svg: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="3" x2="12" y2="21"/><line x1="3" y1="12" x2="21" y2="12"/></svg>`, title: "cursor & pan (default)" },
+  { id: "dot", svg: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/></svg>`, title: "dot marker" },
+  { id: "arrow", svg: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="19" x2="19" y2="5"/><polyline points="5 5 5 19 19 19"/></svg>`, title: "arrow" },
+  { id: "trend", svg: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="20" x2="20" y2="4"/></svg>`, title: "trend line" },
+  { id: "ray", svg: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="20" x2="20" y2="4"/><polyline points="15 4 20 4 20 9"/></svg>`, title: "ray (extends right)" },
+  { id: "hline", svg: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="12" x2="21" y2="12"/></svg>`, title: "horizontal line" },
+  { id: "vline", svg: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="3" x2="12" y2="21"/></svg>`, title: "vertical line" },
+  { id: "measure", svg: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="3" y2="18"/><line x1="21" y1="6" x2="21" y2="18"/></svg>`, title: "measure move (%Δ)" },
+  { id: "rect", svg: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="1"/></svg>`, title: "rectangle" },
+  { id: "fib", svg: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="4" x2="21" y2="4"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="3" y1="14" x2="21" y2="14"/><line x1="3" y1="20" x2="21" y2="20"/></svg>`, title: "fib retracement" },
+  { id: "fibext", svg: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="4" x2="21" y2="4"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="3" y1="14" x2="21" y2="14"/><line x1="3" y1="20" x2="21" y2="20"/><line x1="15" y1="20" x2="21" y2="14"/></svg>`, title: "fibonacci extension (3 clicks)" },
+  { id: "channel", svg: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="18" x2="20" y2="18"/></svg>`, title: "parallel channel (3 clicks)" },
+  { id: "pitchfork", svg: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="12" x2="20" y2="4"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="12" x2="20" y2="20"/></svg>`, title: "andrews pitchfork (3 clicks)" },
+  { id: "position", svg: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="7" width="14" height="10" rx="1"/><line x1="8" y1="7" x2="8" y2="17"/><line x1="16" y1="7" x2="16" y2="17"/></svg>`, title: "long/short position tool (3 clicks)" },
+  { id: "brush", svg: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19l7-7 3 3-7 7-3-3z"/><line x1="19" y1="5" x2="21" y2="3"/><line x1="15" y1="9" x2="17" y2="7"/></svg>`, title: "brush — freehand (drag)" },
+  { id: "alert", svg: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><line x1="12" y1="2" x2="12" y2="4"/></svg>`, title: "price alert — click a level" },
+  { id: "text", svg: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg>`, title: "text label" },
+  { id: "eraser", svg: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 20H7"/><path d="M16 4.5a3.5 3.5 0 0 0-7 0 3.5 3.5 0 0 0 0 7"/><line x1="7" y1="11.5" x2="7" y2="20"/></svg>`, title: "eraser (click a drawing)" },
 ];
 const toolButtonsEl = document.getElementById("toolButtons") as HTMLElement;
 const lineColorRow = document.getElementById("lineColorRow") as HTMLElement;
@@ -601,8 +602,7 @@ for (const def of TOOL_DEFS) {
   const b = document.createElement("button");
   b.className = "tool-btn";
   b.title = def.title;
-  b.textContent = def.glyph;
-  b.style.fontWeight = def.id === "fib" ? "700" : "";
+  b.innerHTML = def.svg;
   b.addEventListener("click", () => applyTool(def.id));
   toolButtonsEl.append(b);
   toolBtns.set(def.id, b);

@@ -43,6 +43,7 @@ export class ChartPane {
   private tfSelect!: HTMLSelectElement;
   private expandBtn!: HTMLButtonElement;
   private symbolEl!: HTMLElement;
+  private fsBadge: HTMLElement | null = null;
   private fullscreen = false;
 
   private candles: Candle[] = [];
@@ -461,7 +462,24 @@ export class ChartPane {
     this.expandBtn.textContent = this.fullscreen ? "⤡" : "⤢";
     this.expandBtn.title = this.fullscreen ? "exit fullscreen (Esc)" : "fullscreen this pane (Esc / ⤡)";
     this.cb.onStatus(this.fullscreen ? `⛶ ${this.symbol} — Esc or ⤡ to exit fullscreen` : "Back in grid view");
+    this.updateFsBadge();
     // element resized via CSS → ResizeObserver fires and refits canvas
+  }
+
+  private updateFsBadge(): void {
+    if (this.fullscreen) {
+      if (!this.fsBadge) {
+        this.fsBadge = document.createElement("div");
+        this.fsBadge.className = "fs-badge";
+        this.fsBadge.setAttribute("aria-hidden", "true");
+        document.body.append(this.fsBadge);
+      }
+      this.fsBadge.textContent = `${this.symbol}  ${this.timeframe}`;
+      this.fsBadge.style.display = "block";
+    } else if (this.fsBadge) {
+      this.fsBadge.remove();
+      this.fsBadge = null;
+    }
   }
 
   toggleOscillator(): void {
@@ -767,7 +785,7 @@ export class ChartPane {
         const y = H - 11;
         ctx.fillStyle = "rgba(16,22,28,0.9)";
         ctx.fillRect(right - w, y - 9, w, 18);
-        ctx.fillStyle = remain <= 0 ? P.up : P.axisText;
+        ctx.fillStyle = remain <= 0 ? P.up : "#ffffff";
         ctx.fillText(line, right - w + 8, y);
         ctx.restore();
       }
@@ -1193,6 +1211,7 @@ export class ChartPane {
     if (!s || s === this.symbol) return;
     this.symbol = s;
     this.symbolEl.textContent = s;
+    this.updateFsBadge();
     this.shapes = listShapes(s, this.timeframe);
     this.pending = []; this.brushPts = null;
     this.candles = [];
