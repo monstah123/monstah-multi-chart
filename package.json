@@ -1,0 +1,23 @@
+{
+  "name": "multi-chart",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Free, local multi-pane chart app. No subscription required.",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "serve": "node bin/serve.js",
+    "ib": "node bin/ib-bridge.js",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@stoqey/ib": "^1.6.15"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0"
+  },
+  "dependencies": {
+    "@stoqey/ib": "^1.6.15",
+    "ib": "^0.2.9"
+  }
+}

@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Multi-Chart — free multi-pane charts</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">Multi-Chart</div>
+  <div class="group">
+    <label class="label" for="symbolInput">Symbol</label>
+    <input id="symbolInput" type="text" spellcheck="false" autocomplete="off" placeholder="BTCUSDT, AAPL, EURUSD…" value="BTCUSDT" list="symbolList">
+    <datalist id="symbolList"></datalist>
+  </div>
+  <div class="group">
+    <label class="label">Timeframe</label>
+    <div id="timeframeRow" class="btn-row" role="toolbar"></div>
+  </div>
+  <div class="group">
+    <label class="label">Layout</label>
+    <div class="btn-row" id="layoutRow"></div>
+  </div>
+  <div class="group spacer"></div>
+  <div class="group">
+    <button id="addPaneBtn" class="btn btn-accent" title="n — add pane">+ Pane</button>
+    <button id="watchlistBtn" class="btn" title="show / hide the symbol watchlist" aria-expanded="false">Watchlist</button>
+    <button id="alertsBtn" class="btn" title="show / hide price alerts">🔔 Alerts</button>
+    <button id="exportBtn" class="btn" title="Ctrl+S — export layout JSON">Export</button>
+    <button id="importBtn" class="btn">Import</button>
+    <input id="importFile" type="file" accept="application/json,.json" hidden>
+  </div>
+</header>
+
+<aside id="sideBar" aria-label="drawing tools">
+  <div class="tool-title">Draw</div>
+  <button id="railToggle" type="button" title="hide / show the drawing rail (more chart space)">«</button>
+  <div id="toolButtons" role="toolbar" aria-label="drawing tools"></div>
+  <div class="tool-sep"></div>
+  <div id="lineColorRow" class="color-row" title="line color"></div>
+  <div id="lineWidthRow" class="width-row" title="line width"></div>
+  <div class="tool-sep"></div>
+  <div id="cursorInfo" class="cursor-info">—</div>
+</aside>
+
+<main id="viewport" class="chart-grid" aria-label="chart grid"></main>
+
+<footer class="statusbar">
+  <span id="statusText">Ready. Select a symbol and timeframe.</span>
+  <span class="sep">|</span>
+  <span>Binance klines for crypto live (WS) · Yahoo Finance REST for stocks</span>
+  <span class="sep">|</span>
+  <span><kbd>n</kbd> add pane · <kbd>⌫</kbd> remove pane · <kbd>Esc</kbd> close fullscreen / Esc+exit menu · <kbd>F11</kbd> fullscreen</span>
+</footer>
+
+<script type="module" src="./dist/main.js"></script>
+</body>
+</html>

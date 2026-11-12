@@ -1,0 +1,43 @@
+# ── Dependencies & caches ────────────────────────────────────────────────
+node_modules/
+.npm-cache/
+.npm/
+.pnpm-store/
+*.log
+npm-debug.log*
+
+# ── Build output (rebuilt with `npm run build`) ──────────────────────────
+dist/
+*.tsbuildinfo
+
+# ── Environment & secrets — local machine only, never commit ────────────
+.env
+.env.local
+.env.development.local
+.env.production.local
+.env.test.local
+.env.*.local
+*.pem
+*.key
+*.p12
+*.pfx
+credentials.json
+secrets.json
+token.json
+
+# ── Editor / OS noise ────────────────────────────────────────────────────
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ── Local engineering notes with account-specific details stay home ─────
+BLUEPRINT-watchlist-and-market-data.md
+*.private.md
+*.local.md
+
+# ── Backups / scratch ────────────────────────────────────────────────────
+*.bak
+*.orig
+scratch/
