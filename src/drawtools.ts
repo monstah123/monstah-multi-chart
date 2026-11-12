@@ -6,7 +6,7 @@
 // ────────────────────────────────────────────────────────────────────────────
 
 export type ToolId =
-  | "cross"     // default cursor (no drawing)
+  | "cross"      // default cursor (no drawing)
   | "dot"
   | "arrow"
   | "trend"
@@ -16,13 +16,14 @@ export type ToolId =
   | "measure"
   | "rect"
   | "fib"
-  | "fibext"    // 3-point fibonacci extension
-  | "channel"   // 3-point parallel channel
-  | "pitchfork" // 3-point Andrews pitchfork
-  | "position"  // 3-point long/short position tool
-  | "brush"     // freehand
+  | "fibext"     // 3-point fibonacci extension
+  | "channel"    // 3-point parallel channel
+  | "pitchfork"  // 3-point Andrews pitchfork
+  | "volprofile" // 2-point fixed range volume profile
+  | "position"   // 3-point long/short position tool
+  | "brush"      // freehand
   | "text"
-  | "alert"     // not a shape: click creates a price alert
+  | "alert"      // not a shape: click creates a price alert
   | "eraser";
 
 export interface Anchor { t: number; p: number }
@@ -48,6 +49,7 @@ export const WIDTHS = [1, 2, 3, 4];
 export const CLICK_COUNT: Partial<Record<ToolId, number>> = {
   arrow: 2, trend: 2, ray: 2, measure: 2, rect: 2, fib: 2,
   channel: 3, pitchfork: 3, fibext: 3, position: 3,
+  volprofile: 2,
 };
 
 /** Tools drawn by press-drag-release instead of clicks. */
@@ -104,7 +106,7 @@ export interface DrawCtx {
   ctx: CanvasRenderingContext2D;
   left: number; right: number; top: number; priceH: number; bottom: number;
   lo: number; hi: number;
-  slice: { t: number }[];
+  slice: { t: number; o: number; h: number; l: number; c: number; v: number }[];
   timeToX: (t: number) => number;
   priceToY: (p: number) => number;
   timeframe: string;
@@ -289,6 +291,126 @@ export function drawShape(shape: Shape, d: DrawCtx): void {
       ctx.fillRect(Math.min(ax, bx), Math.min(ay, by), Math.abs(bx - ax), Math.abs(by - ay));
       ctx.globalAlpha = 1;
       ctx.beginPath(); ctx.rect(Math.min(ax, bx), Math.min(ay, by), Math.abs(bx - ax), Math.abs(by - ay)); ctx.stroke();
+      break;
+    }
+    case "volprofile": {
+      if (pts.length < 2) break;
+      // Fixed range volume profile - draw histogram on the right side
+      const b = shape.b;
+      if (!b) break;
+      const leftPrice = Math.min(shape.a.p, b.p);
+      const rightPrice = Math.max(shape.a.p, b.p);
+      const startTime = Math.min(shape.a.t, b.t);
+      const endTime = Math.max(shape.a.t, b.t);
+      
+      // Filter candles within the time range
+      const rangeCandles = d.slice.filter(c => c.t >= startTime && c.t <= endTime && Number.isFinite(c.v) && c.v > 0);
+      if (rangeCandles.length === 0) break;
+      
+      // Create price buckets
+      const bucketCount = 30;
+      const bucketSize = (rightPrice - leftPrice) / bucketCount;
+      const buckets = new Map<number, number>();
+      
+      for (const c of rangeCandles) {
+        const cLo = Math.max(c.l, leftPrice);
+        const cHi = Math.min(c.h, rightPrice);
+        if (cLo >= cHi) continue;
+        
+        const startBucket = Math.max(0, Math.floor((cLo - leftPrice) / bucketSize));
+        const endBucket = Math.min(bucketCount - 1, Math.floor((cHi - leftPrice) / bucketSize));
+        const bucketsCovered = endBucket - startBucket + 1;
+        const volPerBucket = c.v / bucketsCovered;
+        
+        for (let b = startBucket; b <= endBucket; b++) {
+          const price = leftPrice + b * bucketSize + bucketSize / 2;
+          buckets.set(price, (buckets.get(price) || 0) + volPerBucket);
+        }
+      }
+      
+      if (buckets.size === 0) break;
+      
+      // Find max volume and POC
+      let maxVol = 0, pocPrice = 0;
+      for (const [price, vol] of buckets) {
+        if (vol > maxVol) { maxVol = vol; pocPrice = price; }
+      }
+      if (maxVol === 0) break;
+      
+      // Draw histogram bars extending left from right edge
+      const profileWidth = 120;
+      const profileRight = d.right;
+      const profileLeft = profileRight - profileWidth;
+      
+      ctx.save();
+      ctx.globalAlpha = 0.5;
+      
+      for (const [price, vol] of buckets) {
+        const y = d.priceToY(price);
+        const barWidth = (vol / maxVol) * profileWidth;
+        
+        // Color based on whether price is above/below POC
+        ctx.fillStyle = price >= pocPrice ? "rgba(38, 166, 154, 0.7)" : "rgba(239, 83, 80, 0.7)";
+        ctx.fillRect(profileLeft, y - 2, barWidth, 4);
+      }
+      
+      // POC line - horizontal across the chart
+      const pocY = d.priceToY(pocPrice);
+      ctx.strokeStyle = "#ffd200";
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([5, 5]);
+      ctx.beginPath();
+      ctx.moveTo(d.left, pocY);
+      ctx.lineTo(d.right, pocY);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      
+      // POC label
+      ctx.fillStyle = "#ffd200";
+      ctx.font = "bold 10px sans-serif";
+      ctx.textAlign = "left";
+      ctx.fillText(`POC: ${pocPrice.toFixed(2)}`, d.left + 4, pocY - 4);
+      
+      // VAH/VAL (Value Area High/Low - 70% of volume)
+      const sorted = [...buckets.entries()].sort((a, b) => b[1] - a[1]);
+      let cumVol = 0;
+      const targetVol = maxVol * 0.7;
+      let vah = pocPrice, val = pocPrice;
+      for (const [price, vol] of sorted) {
+        cumVol += vol;
+        if (cumVol >= targetVol) break;
+        vah = Math.max(vah, price);
+        val = Math.min(val, price);
+      }
+      
+      // Value Area lines
+      ctx.strokeStyle = "rgba(255, 210, 0, 0.5)";
+      ctx.lineWidth = 1;
+      ctx.setLineDash([3, 6]);
+      for (const price of [vah, val]) {
+        const y = d.priceToY(price);
+        ctx.beginPath();
+        ctx.moveTo(d.left, y);
+        ctx.lineTo(d.right, y);
+        ctx.stroke();
+      }
+      ctx.setLineDash([]);
+      
+      // Range boundary lines (vertical)
+      ctx.strokeStyle = "rgba(41, 98, 255, 0.6)";
+      ctx.lineWidth = 1;
+      ctx.setLineDash([4, 4]);
+      const startX = d.timeToX(startTime);
+      const endX = d.timeToX(endTime);
+      for (const x of [startX, endX]) {
+        ctx.beginPath();
+        ctx.moveTo(x, d.top);
+        ctx.lineTo(x, d.bottom);
+        ctx.stroke();
+      }
+      ctx.setLineDash([]);
+      
+      ctx.restore();
       break;
     }
     case "fib": {

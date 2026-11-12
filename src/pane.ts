@@ -44,9 +44,7 @@ export class ChartPane {
   private expandBtn!: HTMLButtonElement;
   private symbolEl!: HTMLElement;
   private fsBadge: HTMLElement | null = null;
-  private vpBtn!: HTMLButtonElement;
   private fullscreen = false;
-  private showVolumeProfile = false;
 
   private candles: Candle[] = [];
   private indicator: ReturnType<typeof computeAll> | null = null;
@@ -133,18 +131,14 @@ export class ChartPane {
       this.shapes = listShapes(this.symbol, this.timeframe);
       this.pending = []; this.brushPts = null;
       void this.load();
+      // keep the fullscreen badge in sync when the timeframe changes
+      this.updateFsBadge();
     });
 
     const oscBtn = document.createElement("button");
     oscBtn.textContent = "OSC";
     oscBtn.title = "cycle oscillator RSI → MACD → off";
     oscBtn.addEventListener("click", () => this.toggleOscillator());
-
-    this.vpBtn = document.createElement("button");
-    this.vpBtn.textContent = "VP";
-    this.vpBtn.title = "toggle fixed range volume profile";
-    this.vpBtn.className = "vp-btn";
-    this.vpBtn.addEventListener("click", () => this.toggleVolumeProfile());
 
     this.priceEl = document.createElement("span");
     this.priceEl.className = "price";
@@ -167,7 +161,7 @@ export class ChartPane {
     rm.title = "remove pane";
     rm.addEventListener("click", () => this.remove());
 
-    this.headerEl.append(sym, this.tfSelect, oscBtn, this.vpBtn, this.priceEl, this.countdownEl, expand, rm);
+    this.headerEl.append(sym, this.tfSelect, oscBtn, this.priceEl, this.countdownEl, expand, rm);
     this.wrap.append(this.headerEl);
 
     this.canvas = document.createElement("canvas");
@@ -474,6 +468,9 @@ export class ChartPane {
     // element resized via CSS → ResizeObserver fires and refits canvas
   }
 
+  /** Refresh the fullscreen badge (symbol + timeframe) — call after the
+     *  symbol or timeframe changes so the overlay never shows stale text. */
+  refreshFsBadge(): void { this.updateFsBadge(); }
   private updateFsBadge(): void {
     if (this.fullscreen) {
       if (!this.fsBadge) {
@@ -494,80 +491,6 @@ export class ChartPane {
     const order: OscillatorMode[] = ["rsi", "macd", "off"];
     this.oscMode = order[(order.indexOf(this.oscMode) + 1) % order.length];
     this.draw();
-  }
-
-  toggleVolumeProfile(): void {
-    this.showVolumeProfile = !this.showVolumeProfile;
-    this.vpBtn.classList.toggle("active", this.showVolumeProfile);
-    this.draw();
-  }
-
-  private buildVolumeProfile(slice: Candle[], lo: number, hi: number, priceH: number, top: number): Map<number, number> {
-    // Create price buckets and accumulate volume
-    const bucketCount = 50;
-    const bucketSize = (hi - lo) / bucketCount;
-    const buckets = new Map<number, number>();
-    
-    for (const c of slice) {
-      if (!Number.isFinite(c.v) || c.v <= 0) continue;
-      // Distribute candle volume across its price range
-      const cLo = Math.max(c.l, lo);
-      const cHi = Math.min(c.h, hi);
-      if (cLo >= cHi) continue;
-      
-      const startBucket = Math.max(0, Math.floor((cLo - lo) / bucketSize));
-      const endBucket = Math.min(bucketCount - 1, Math.floor((cHi - lo) / bucketSize));
-      const bucketsCovered = endBucket - startBucket + 1;
-      const volPerBucket = c.v / bucketsCovered;
-      
-      for (let b = startBucket; b <= endBucket; b++) {
-        const key = Math.round(lo + b * bucketSize + bucketSize / 2);
-        buckets.set(key, (buckets.get(key) || 0) + volPerBucket);
-      }
-    }
-    return buckets;
-  }
-
-  private drawVolumeProfile(ctx: CanvasRenderingContext2D, buckets: Map<number, number>, lo: number, hi: number, priceH: number, top: number, left: number, right: number): void {
-    if (buckets.size === 0) return;
-    
-    // Find max volume for scaling
-    let maxVol = 0;
-    for (const v of buckets.values()) if (v > maxVol) maxVol = v;
-    if (maxVol === 0) return;
-    
-    const profileWidth = 80; // pixels
-    const profileLeft = right - PRICE_AXIS_W - profileWidth - 4;
-    
-    ctx.save();
-    ctx.globalAlpha = 0.6;
-    
-    for (const [price, vol] of buckets) {
-      const y = top + ((hi - price) / (hi - lo)) * priceH;
-      const barWidth = (vol / maxVol) * profileWidth;
-      
-      ctx.fillStyle = "#26a69a";
-      ctx.fillRect(profileLeft, y - 2, barWidth, 4);
-    }
-    
-    // POC (Point of Control) - highest volume price
-    let pocPrice = 0, pocVol = 0;
-    for (const [price, vol] of buckets) {
-      if (vol > pocVol) { pocVol = vol; pocPrice = price; }
-    }
-    if (pocPrice > 0) {
-      const y = top + ((hi - pocPrice) / (hi - lo)) * priceH;
-      ctx.strokeStyle = "#ffd200";
-      ctx.lineWidth = 1;
-      ctx.setLineDash([3, 3]);
-      ctx.beginPath();
-      ctx.moveTo(profileLeft, y);
-      ctx.lineTo(right - PRICE_AXIS_W - 2, y);
-      ctx.stroke();
-      ctx.setLineDash([]);
-    }
-    
-    ctx.restore();
   }
 
   // ─── rendering ─────────────────────────────────────────────────────
@@ -748,12 +671,6 @@ export class ChartPane {
         const fxLabel = /^[A-Z]{6}=X$/.test(this.symbol.toUpperCase());
         ctx.fillText(fxLabel ? "TICK VOL" : "VOL", left + 4, volTop - 9);
       }
-    }
-
-    // fixed range volume profile (right side, next to price axis)
-    if (this.showVolumeProfile && showVolume) {
-      const buckets = this.buildVolumeProfile(slice, lo, hi, priceH, top);
-      this.drawVolumeProfile(ctx, buckets, lo, hi, priceH, top, left, right);
     }
 
     // oscillator strip (RSI / MACD)

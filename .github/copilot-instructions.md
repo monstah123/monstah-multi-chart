@@ -59,3 +59,49 @@ the constraints below hold until the user (repo owner) explicitly revokes one.
 4. Candle countdown pill (`O HH:mm:ss · C HH:mm:ss · ⏳ mm:ss`) is present in
    the bottom-of-price axis only on full-size views.
 5. git status: no `.env*`, `dist/`, or `node_modules/` staged.
+
+## Recent fixes (applied to this repo)
+
+### Fullscreen badge shows stale timeframe after switching TF
+
+**Symptom:** in fullscreen mode the symbol shows in blue (the `fs-badge`
+overlay), but changing the chart timeframe (e.g. `1M` → `5M`) leaves the
+badge showing the old timeframe.
+
+**Root cause:** `ChartPane.updateFsBadge()` only ran from `toggleFullscreen()`
+and `setSymbol()`. The two timeframe-change paths updated `this.timeframe`
+and called `load()` but never refreshed the badge, so it froze at the TF
+active when fullscreen was entered.
+
+**Files changed:** `src/pane.ts`, `src/main.ts`
+- `src/pane.ts` per-pane dropdown `change` → added `this.updateFsBadge()`
+  after `void this.load()`.
+- `src/pane.ts` → exposed public `refreshFsBadge()` wrapper around the
+  private `updateFsBadge()`.
+- `src/main.ts` timeframe button handler → added `p.refreshFsBadge()`
+  after `void p.load()`.
+
+**Verify:** fullscreen a pane, then click a different TF button and the
+per-pane dropdown — the badge must track the new timeframe.
+
+### Modern TradingView-style toolbar icons (left drawing rail)
+
+**Symptom:** the left drawing-tool rail used plain 2px cross/line glyphs that
+read as dated next to TradingView's modern toolbar.
+
+**Change:** replaced all `TOOL_DEFS` SVGs in `src/main.ts` with a cleaner set
+in TradingView's public visual language — 24×24 grid, 1.75px rounded strokes,
+center-dot anchors (crosshair, H/V lines, trend endpoints), true diagonal
+parallel channel, volume-profile histogram, pencil-style brush, bell with
+clapper, and Lucide-style eraser. Undo and Clear buttons switched from text
+glyphs (`↺`, `🗑`) to matching SVG icons.
+
+**Files changed:** `src/main.ts` (icons + undo/clear), `styles.css`
+(`.tool-btn`: 40×32, 7px radius, muted-2 idle color, subtle hover, softer
+blue active state).
+
+**Note:** icons are recreated from TradingView's publicly visible UI style,
+not copied from their proprietary bundles (repo guardrail on bundle code).
+
+**Verify:** rebuild, Ctrl+Shift+R, confirm every rail icon renders crisply at
+20px and the active tool shows the blue accent.

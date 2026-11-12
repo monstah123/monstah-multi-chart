@@ -119,8 +119,8 @@ button:hover { background: var(--btn-hover); }
 #sideBar .tool-sep { width: 28px; height: 1px; background: var(--border); margin: 2px 0; }
 #sideBar #toolButtons { display: flex; flex-direction: column; gap: 4px; align-items: center; }
 #sideBar .tool-btn {
-  width: 44px;
-  height: 34px;
+  width: 40px;
+  height: 32px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -128,9 +128,10 @@ button:hover { background: var(--btn-hover); }
   line-height: 1;
   background: transparent;
   border: 1px solid transparent;
-  border-radius: 8px;
-  color: var(--text-dim);
+  border-radius: 7px;
+  color: var(--muted-2);
   cursor: pointer;
+  transition: background .12s ease, color .12s ease, border-color .12s ease;
 }
 #sideBar .tool-btn svg {
   width: 20px;
@@ -138,8 +139,8 @@ button:hover { background: var(--btn-hover); }
   stroke: currentColor;
   flex-shrink: 0;
 }
-#sideBar .tool-btn:hover { background: rgba(255,255,255,0.07); border-color: rgba(255,255,255,0.10); }
-#sideBar .tool-btn.active { background: rgba(41, 98, 255, 0.32); border-color: var(--accent); color: var(--accent); }
+#sideBar .tool-btn:hover { background: rgba(255,255,255,0.06); color: var(--text); }
+#sideBar .tool-btn.active { background: rgba(41, 98, 255, 0.22); border-color: rgba(41, 98, 255, 0.55); color: #5b8cff; }
 #sideBar .tool-btn.danger { color: var(--red); }
 #sideBar .tool-btn.danger:hover { background: rgba(239, 83, 80, 0.18); border-color: var(--red); }
 #sideBar .color-row { display: flex; flex-direction: column; gap: 5px; }
@@ -225,18 +226,6 @@ main#viewport {
 .price.down { color: var(--red); }
 .countdown { font-size: 11px; color: #ffffff; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .countdown.closed { color: var(--gold); }
-.vp-btn {
-  padding: 2px 8px;
-  font-size: 11px;
-  line-height: 1;
-  border-radius: 4px;
-  border: none;
-  background: transparent;
-  color: var(--text-dim);
-  margin-left: 4px;
-}
-.vp-btn:hover { background: rgba(255,255,255,0.08); color: var(--text); }
-.vp-btn.active { background: rgba(38, 166, 154, 0.25); color: var(--green); border-color: var(--green); }
 select {
   background: var(--input-bg);
   color: var(--text);
