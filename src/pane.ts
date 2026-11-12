@@ -1061,7 +1061,7 @@ export class ChartPane {
       return xFromI(a + frac);
     };
     const priceToY = (p: number): number => top + ((hi - p) / (hi - lo)) * priceH;
-    return { ctx, left, right, top, priceH, bottom: g.priceBot, lo, hi, slice: g.slice, timeToX, priceToY };
+    return { ctx, left, right, top, priceH, bottom: g.priceBot, lo, hi, slice: g.slice, timeToX, priceToY, timeframe: this.timeframe, symbol: this.symbol };
   }
 
   private priceAtY(y: number): number {

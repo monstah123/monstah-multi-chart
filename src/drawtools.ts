@@ -55,6 +55,26 @@ export const DRAG_TOOLS: ReadonlySet<ToolId> = new Set<ToolId>(["brush"]);
 
 const LS_KEY = (sym: string, tf: string) => `mc-draw:${sym}:${tf}`;
 
+/** Pips per unit for common symbols — adjust as needed */
+function getPipSize(symbol: string): number {
+  const s = symbol.toUpperCase();
+  if (/^[A-Z]{6}=X$/.test(s)) return 0.0001;           // FX majors (EURUSD=X etc.)
+  if (s.includes("JPY") && s.includes("=X")) return 0.01; // JPY pairs
+  if (s.endsWith("USDT") || s.endsWith("BTC") || s.endsWith("ETH")) return 0.01; // crypto
+  if (s.startsWith("^") || s.includes("=F")) return 0.25; // futures/indices
+  return 0.01; // stocks default
+}
+
+/** Estimate bars between two timestamps for a given timeframe */
+function getBarsBetween(t1: number, t2: number, timeframe: string): number {
+  const ms: Record<string, number> = {
+    "1m": 60_000, "5m": 300_000, "15m": 900_000, "30m": 1_800_000,
+    "1h": 3_600_000, "4h": 14_400_000, "1D": 86_400_000, "1W": 604_800_000, "1M": 2_592_000_000
+  };
+  const tfMs = ms[timeframe] ?? 60_000;
+  return Math.max(0, Math.round(Math.abs(t2 - t1) / tfMs));
+}
+
 export function newShapeId(): string {
   return Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
 }
@@ -87,6 +107,8 @@ export interface DrawCtx {
   slice: { t: number }[];
   timeToX: (t: number) => number;
   priceToY: (p: number) => number;
+  timeframe: string;
+  symbol: string;
 }
 
 const TOL = 7;
@@ -246,7 +268,10 @@ export function drawShape(shape: Shape, d: DrawCtx): void {
       ctx.setLineDash([]);
       const dp = shape.b ? shape.b.p - shape.a.p : 0;
       const pct = dp / (shape.a.p || 1);
-      const label = `${fmtNum(dp)}  (${fmtPct(pct)})`;
+      const bars = d.timeframe && shape.b ? getBarsBetween(shape.a.t, shape.b.t, d.timeframe) : 0;
+      const pipSize = d.symbol ? getPipSize(d.symbol) : 0.01;
+      const pips = dp / pipSize;
+      const label = `${fmtNum(dp)}  (${fmtPct(pct)})  ${pips.toFixed(1)} pips  ${bars} bars`;
       ctx.font = "bold 11px sans-serif";
       const tw = ctx.measureText(label).width + 14;
       const lx = Math.min(Math.max((ax + bx) / 2 - tw / 2, d.left), d.right - tw);
