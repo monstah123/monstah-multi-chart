@@ -225,6 +225,18 @@ main#viewport {
 .price.down { color: var(--red); }
 .countdown { font-size: 11px; color: #ffffff; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .countdown.closed { color: var(--gold); }
+.vp-btn {
+  padding: 2px 8px;
+  font-size: 11px;
+  line-height: 1;
+  border-radius: 4px;
+  border: none;
+  background: transparent;
+  color: var(--text-dim);
+  margin-left: 4px;
+}
+.vp-btn:hover { background: rgba(255,255,255,0.08); color: var(--text); }
+.vp-btn.active { background: rgba(38, 166, 154, 0.25); color: var(--green); border-color: var(--green); }
 select {
   background: var(--input-bg);
   color: var(--text);
