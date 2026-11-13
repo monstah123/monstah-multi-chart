@@ -45,6 +45,8 @@ export class ChartPane {
   private symbolEl!: HTMLElement;
   private fsBadge: HTMLElement | null = null;
   private fullscreen = false;
+  private hscrollEl!: HTMLDivElement;
+  private hscrollInput!: HTMLInputElement;
 
   private candles: Candle[] = [];
   private indicator: ReturnType<typeof computeAll> | null = null;
@@ -169,6 +171,21 @@ export class ChartPane {
     this.wrap.append(this.canvas);
     this.ctx = this.canvas.getContext("2d")!;
 
+    // horizontal history slider — only shown in fullscreen (CSS)
+    this.hscrollEl = document.createElement("div");
+    this.hscrollEl.className = "pane-hscroll";
+    this.hscrollInput = document.createElement("input");
+    this.hscrollInput.type = "range";
+    this.hscrollInput.className = "pane-hscroll-range";
+    this.hscrollInput.min = "0";
+    this.hscrollInput.step = "1";
+    this.hscrollInput.value = "0";
+    this.hscrollInput.title = "drag left for older bars · drag right for newer bars";
+    this.hscrollInput.setAttribute("aria-label", "scroll chart history");
+    this.hscrollInput.addEventListener("input", () => this.onHscrollInput());
+    this.hscrollEl.append(this.hscrollInput);
+    this.wrap.append(this.hscrollEl);
+
     this.canvas.addEventListener("wheel", this.onWheel, { passive: false });
     this.canvas.addEventListener("pointerdown", this.onPointerDown);
     this.canvas.addEventListener("pointermove", this.onPointerMove);
@@ -195,13 +212,15 @@ export class ChartPane {
     });
   }
 
+  /** CSS box of the canvas (already excludes the header and, in fullscreen, the slider row) */
+  private canvasBox(): { w: number; h: number } {
+    const r = this.canvas.getBoundingClientRect();
+    return { w: Math.max(200, Math.round(r.width)), h: Math.max(140, Math.round(r.height)) };
+  }
+
   private fitCanvas(): void {
-    const rect = this.wrap.getBoundingClientRect();
     const dpr = window.devicePixelRatio || 1;
-    const h = Math.max(140, Math.round(rect.height) - 26);
-    const w = Math.max(200, Math.round(rect.width));
-    this.canvas.style.width = `${w}px`;
-    this.canvas.style.height = `${h}px`;
+    const { w, h } = this.canvasBox();
     this.canvas.width = Math.round(w * dpr);
     this.canvas.height = Math.round(h * dpr);
     this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -465,7 +484,33 @@ export class ChartPane {
     this.expandBtn.title = this.fullscreen ? "exit fullscreen (Esc)" : "fullscreen this pane (Esc / ⤡)";
     this.cb.onStatus(this.fullscreen ? `⛶ ${this.symbol} — Esc or ⤡ to exit fullscreen` : "Back in grid view");
     this.updateFsBadge();
-    // element resized via CSS → ResizeObserver fires and refits canvas
+    // element resized via CSS → ResizeObserver fires and refits canvas;
+    // the explicit refit also reserves/unreserves the slider row immediately
+    this.requestFitAndDraw();
+  }
+
+  // ─── fullscreen history slider ─────────────────────────────────────
+  /** Keep the slider in sync: 0 = oldest history (left), max = newest (right). */
+  private syncHscroll(): void {
+    if (!this.hscrollInput) return;
+    const total = this.candles.length;
+    const n = Math.min(this.visibleBars, total);
+    const maxOffset = Math.max(0, total - n);
+    this.offsetBars = Math.max(0, Math.min(maxOffset, this.offsetBars));
+    this.hscrollInput.max = String(maxOffset);
+    this.hscrollInput.value = String(maxOffset - this.offsetBars);
+    this.hscrollInput.disabled = maxOffset <= 0;
+  }
+
+  private onHscrollInput(): void {
+    const total = this.candles.length;
+    const n = Math.min(this.visibleBars, total);
+    const maxOffset = Math.max(0, total - n);
+    const v = Math.max(0, Math.min(maxOffset, Math.round(Number(this.hscrollInput.value) || 0)));
+    // the slider counts from the oldest bar: dragging right → newer bars
+    this.offsetBars = maxOffset - v;
+    this.futureBars = 0;
+    this.draw();
   }
 
   /** Refresh the fullscreen badge (symbol + timeframe) — call after the
@@ -505,9 +550,8 @@ export class ChartPane {
   private draw(): void {
     const ctx = this.ctx;
     const P = palette();
-    const rect = this.wrap.getBoundingClientRect();
-    const W = Math.round(rect.width);
-    const H = Math.max(140, Math.round(rect.height) - 26);
+    this.syncHscroll();
+    const { w: W, h: H } = this.canvasBox();
     ctx.fillStyle = P.panel;
     ctx.fillRect(0, 0, W, H);
     const paintNoData = (msg: string): void => {

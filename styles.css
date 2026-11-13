@@ -236,6 +236,69 @@ select {
   max-width: 96px;
 }
 canvas.panes-canvas { flex: 1; display: block; width: 100%; min-height: 0; touch-action: none; }
+
+/* fullscreen-only horizontal history slider (styled like the rail's scrollbar) */
+.pane-hscroll {
+  display: none;
+  flex: none;
+  height: 26px;
+  align-items: center;
+  padding: 0 10px;
+  border-top: 1px solid var(--border);
+  background: var(--pane-head);
+}
+.pane.fullscreen .pane-hscroll { display: flex; }
+.pane-hscroll-range {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 16px;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  cursor: pointer;
+}
+.pane-hscroll-range::-webkit-slider-runnable-track {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--border);
+}
+.pane-hscroll-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 64px;
+  height: 14px;
+  margin-top: -4px;
+  border: none;
+  border-radius: 999px;
+  background: var(--muted);
+  transition: background .12s ease;
+}
+.pane-hscroll-range:hover::-webkit-slider-thumb { background: var(--muted-2); }
+.pane-hscroll-range:active::-webkit-slider-thumb { background: var(--accent); }
+.pane-hscroll-range:focus-visible::-webkit-slider-thumb {
+  background: var(--accent);
+  box-shadow: 0 0 0 2px rgba(41, 98, 255, 0.35);
+}
+.pane-hscroll-range::-moz-range-track {
+  height: 6px;
+  border: none;
+  border-radius: 999px;
+  background: var(--border);
+}
+.pane-hscroll-range::-moz-range-thumb {
+  width: 64px;
+  height: 14px;
+  border: none;
+  border-radius: 999px;
+  background: var(--muted);
+  transition: background .12s ease;
+}
+.pane-hscroll-range:hover::-moz-range-thumb { background: var(--muted-2); }
+.pane-hscroll-range:active::-moz-range-thumb { background: var(--accent); }
+.pane-hscroll-range:disabled { opacity: 0.4; cursor: default; }
+.pane-hscroll-range:disabled::-webkit-slider-thumb { background: var(--muted-2); }
+.pane-hscroll-range:disabled::-moz-range-thumb { background: var(--muted-2); }
 .pane.fullscreen {
   position: fixed;
   inset: 0;

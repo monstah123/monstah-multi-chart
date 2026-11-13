@@ -62,28 +62,6 @@ the constraints below hold until the user (repo owner) explicitly revokes one.
 
 ## Recent fixes (applied to this repo)
 
-### Fullscreen badge shows stale timeframe after switching TF
-
-**Symptom:** in fullscreen mode the symbol shows in blue (the `fs-badge`
-overlay), but changing the chart timeframe (e.g. `1M` → `5M`) leaves the
-badge showing the old timeframe.
-
-**Root cause:** `ChartPane.updateFsBadge()` only ran from `toggleFullscreen()`
-and `setSymbol()`. The two timeframe-change paths updated `this.timeframe`
-and called `load()` but never refreshed the badge, so it froze at the TF
-active when fullscreen was entered.
-
-**Files changed:** `src/pane.ts`, `src/main.ts`
-- `src/pane.ts` per-pane dropdown `change` → added `this.updateFsBadge()`
-  after `void this.load()`.
-- `src/pane.ts` → exposed public `refreshFsBadge()` wrapper around the
-  private `updateFsBadge()`.
-- `src/main.ts` timeframe button handler → added `p.refreshFsBadge()`
-  after `void p.load()`.
-
-**Verify:** fullscreen a pane, then click a different TF button and the
-per-pane dropdown — the badge must track the new timeframe.
-
 ### Modern TradingView-style toolbar icons (left drawing rail)
 
 **Symptom:** the left drawing-tool rail used plain 2px cross/line glyphs that
@@ -134,3 +112,31 @@ bars overlapped or left gaps depending on zoom, and the eraser couldn't hit it.
 **Verify:** add `volprofile`, click twice over a range — green/red split bars
 sit at the left edge of the selection growing right, POC/VAH/VAL label
 correctly; pan away and it stays; eraser click inside the box deletes it.
+
+### Fullscreen horizontal history slider
+
+**Request:** in single-pane fullscreen, a horizontal slider at the bottom of
+the chart (like the left rail's scrollbar) to slide through history.
+
+**Files changed:** `src/pane.ts`, `styles.css`
+- Every pane now builds a `.pane-hscroll` row with a native
+  `<input type="range">` after the canvas. CSS hides it in grid view and shows
+  it only under `.pane.fullscreen` (26px tall, `var(--pane-head)` background,
+  thin `var(--border)` track, wide `var(--muted)` pill thumb that brightens on
+  hover and turns accent-blue while dragging — matches the rail scrollbar).
+- Slider maps left→older / right→newer: `max = bars - visibleBars`,
+  `value = max - offsetBars`. Dragging sets `offsetBars` and zeroes
+  `futureBars`; `syncHscroll()` runs on every `draw()` so mouse pans, wheel
+  zoom and live bars keep the thumb current. Disabled when all bars fit.
+- `fitCanvas()` now sizes the backing store from the canvas's own
+  `getBoundingClientRect()` instead of `wrap.height - 26`; this keeps the
+  drawing surface exact in fullscreen (borderless pane + slider row) with no
+  2px vertical stretch.
+- `toggleFullscreen()` explicitly refits so the canvas reserves/releases the
+  slider row immediately; Esc path goes through the same method.
+
+**Verify:** fullscreen a pane — slider appears at the bottom and the time axis
+stays visible above it. Drag it: chart scrolls through history (screenshot
+test: newest → 14h back). Mouse Shift+drag also moves the thumb; plain drag
+stays vertical pan (`↕ Pan` default). Exit fullscreen — slider disappears.
+
