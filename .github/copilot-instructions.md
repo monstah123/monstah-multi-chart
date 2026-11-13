@@ -62,6 +62,30 @@ the constraints below hold until the user (repo owner) explicitly revokes one.
 
 ## Recent fixes (applied to this repo)
 
+### Watchlist loads symbols in pane fullscreen
+
+**Symptom:** clicking watchlist rows while a pane was fullscreen never changed
+the visible chart. Clicking a symbol already open somewhere did nothing at all.
+
+**Root cause:** `onPick` in `main.ts` targeted `focusedPane` (often null or a
+hidden grid pane) or the last pane, and the "already open" branch only set
+`focusedPane` without switching the fullscreen chart. The watchlist wiring
+itself was fine.
+
+**Files changed:** `src/main.ts` only — `src/watchlist.ts` untouched.
+- `onPick` now checks for a pane with the `fullscreen` class before the
+  "already open" branch. A normal pick switches that pane in place with
+  `setSymbol()`, saves the session, and updates `focusedPane`; picking the
+  symbol already on screen only refreshes the status.
+- Shift/Alt-click still opens a new pane exactly as before.
+- Grid-mode behavior is unchanged.
+
+**Verify:** fullscreen a pane and click a watchlist row — the visible chart and
+fullscreen badge switch in place with no extra pane (headless: pane count stays
+4, session updates; an already-open symbol also switches the fullscreen pane
+instead of being ignored). Exit fullscreen and click a row — the focused pane
+still changes as before; shift-click still adds a pane.
+
 ### Symbol picker works in pane fullscreen
 
 **Symptom:** choosing a symbol from the top-left grouped picker while a pane

@@ -727,6 +727,21 @@ const watchlist = initWatchlist({
   button: watchlistBtn,
   onPick: (sym, ev) => {
     const wantsNew = !!ev && (ev.shiftKey || ev.altKey);
+    // In pane fullscreen the visible chart is the only pick target; loading
+    // into a hidden grid pane behind the overlay looks like nothing happened.
+    const fullscreenPane = state.panes.find((p) => p.wrap.classList.contains("fullscreen"));
+    if (fullscreenPane && !wantsNew) {
+      if (fullscreenPane.symbol !== sym) {
+        fullscreenPane.setSymbol(sym);
+        saveSession();
+        setStatus(`Pane ${fullscreenPane.id} → ${sym} (fullscreen)`);
+      } else {
+        setStatus(`${sym} is already shown in the fullscreen chart`);
+      }
+      focusedPane = fullscreenPane;
+      watchlist.refreshOpenMarks();
+      return;
+    }
     // already open somewhere? focus it instead of duplicating
     const existing = state.panes.find((p) => p.symbol === sym);
     if (existing && !wantsNew) {
