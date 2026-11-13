@@ -5,6 +5,8 @@
 // Persisted per symbol+timeframe key in localStorage.
 // ────────────────────────────────────────────────────────────────────────────
 
+import { palette } from "./theme.js";
+
 export type ToolId =
   | "cross"      // default cursor (no drawing)
   | "dot"
@@ -107,6 +109,8 @@ export interface DrawCtx {
   left: number; right: number; top: number; priceH: number; bottom: number;
   lo: number; hi: number;
   slice: { t: number; o: number; h: number; l: number; c: number; v: number }[];
+  /** full candle history — lets range tools (volprofile) stay fixed when panning */
+  allCandles?: { t: number; o: number; h: number; l: number; c: number; v: number }[];
   timeToX: (t: number) => number;
   priceToY: (p: number) => number;
   timeframe: string;
@@ -174,6 +178,13 @@ export function hitTest(p: { x: number; y: number }, shape: Shape, d: DrawCtx): 
       };
       return inBox(entry[1], target[1]) || inBox(entry[1], stop[1]);
     }
+    case "volprofile": {
+      // whole selection box is the hit target so the eraser/picker works
+      if (pts.length < 2) return false;
+      const x1 = Math.min(pts[0][0], pts[1][0]), x2 = Math.max(pts[0][0], pts[1][0]);
+      const y1 = Math.min(pts[0][1], pts[1][1]), y2 = Math.max(pts[0][1], pts[1][1]);
+      return p.x >= x1 - TOL && p.x <= x2 + TOL && p.y >= y1 - TOL && p.y <= y2 + TOL;
+    }
     default: {
       if (pts.length < 2) return false;
       return distToSeg(p.x, p.y, pts[0][0], pts[0][1], pts[1][0], pts[1][1]) <= TOL;
@@ -206,6 +217,16 @@ function fibExtLevels(pts: [number, number][]): [number, number][] {
 
 const fmtPct = (v: number): string => `${v >= 0 ? "+" : ""}${(v * 100).toFixed(2)}%`;
 const fmtNum = (n: number): string => `${n >= 0 ? "+" : ""}${Math.round(n * 100) / 100}`;
+/** price with decimals that scale to the instrument (0.00001 coins vs 100k BTC) */
+const fmtPriceLabel = (v: number): string => {
+  if (!Number.isFinite(v)) return "—";
+  const a = Math.abs(v);
+  if (a >= 1000) return v.toFixed(2);
+  if (a >= 10) return v.toFixed(3);
+  if (a >= 1) return v.toFixed(4);
+  if (a >= 0.01) return v.toFixed(5);
+  return v.toFixed(6);
+};
 
 // ─── renderer ─────────────────────────────────────────────────────────
 export function drawShape(shape: Shape, d: DrawCtx): void {
@@ -295,122 +316,143 @@ export function drawShape(shape: Shape, d: DrawCtx): void {
     }
     case "volprofile": {
       if (pts.length < 2) break;
-      // Fixed range volume profile - draw histogram on the right side
       const b = shape.b;
       if (!b) break;
-      const leftPrice = Math.min(shape.a.p, b.p);
-      const rightPrice = Math.max(shape.a.p, b.p);
+      const loP = Math.min(shape.a.p, b.p);
+      const hiP = Math.max(shape.a.p, b.p);
+      if (!(hiP > loP)) break; // zero-height selection — nothing to bucket
       const startTime = Math.min(shape.a.t, b.t);
       const endTime = Math.max(shape.a.t, b.t);
-      
-      // Filter candles within the time range
-      const rangeCandles = d.slice.filter(c => c.t >= startTime && c.t <= endTime && Number.isFinite(c.v) && c.v > 0);
+
+      // Fixed-range profile must use the whole history for that window, not
+      // just the bars currently on screen — otherwise panning/zooming changes
+      // the histogram and it stops being "fixed".
+      const source = d.allCandles && d.allCandles.length ? d.allCandles : d.slice;
+      const rangeCandles = source.filter(
+        (c) => c.t >= startTime && c.t <= endTime && Number.isFinite(c.v) && c.v > 0,
+      );
       if (rangeCandles.length === 0) break;
-      
-      // Create price buckets
+
+      // price buckets — one row per bucket, filled by each candle's H-L span.
+      // Volume is split into up/down the way TradingView does it: a bar whose
+      // close is at or above its open counts as up volume, otherwise down.
       const bucketCount = 30;
-      const bucketSize = (rightPrice - leftPrice) / bucketCount;
-      const buckets = new Map<number, number>();
-      
+      const bucketSize = (hiP - loP) / bucketCount;
+      const volUp = new Array<number>(bucketCount).fill(0);
+      const volDown = new Array<number>(bucketCount).fill(0);
       for (const c of rangeCandles) {
-        const cLo = Math.max(c.l, leftPrice);
-        const cHi = Math.min(c.h, rightPrice);
-        if (cLo >= cHi) continue;
-        
-        const startBucket = Math.max(0, Math.floor((cLo - leftPrice) / bucketSize));
-        const endBucket = Math.min(bucketCount - 1, Math.floor((cHi - leftPrice) / bucketSize));
-        const bucketsCovered = endBucket - startBucket + 1;
-        const volPerBucket = c.v / bucketsCovered;
-        
-        for (let b = startBucket; b <= endBucket; b++) {
-          const price = leftPrice + b * bucketSize + bucketSize / 2;
-          buckets.set(price, (buckets.get(price) || 0) + volPerBucket);
+        const cLo = Math.max(Math.min(c.l, c.h), loP);
+        const cHi = Math.min(Math.max(c.l, c.h), hiP);
+        if (cHi < cLo) continue;
+        let s = Math.floor((cLo - loP) / bucketSize);
+        let e = Math.floor((cHi - loP) / bucketSize);
+        s = Math.max(0, Math.min(bucketCount - 1, s));
+        e = Math.max(0, Math.min(bucketCount - 1, e));
+        const share = c.v / (e - s + 1);
+        const side = c.c >= c.o ? volUp : volDown;
+        for (let i = s; i <= e; i++) side[i] += share;
+      }
+
+      const vols = new Array<number>(bucketCount);
+      let totalVol = 0, maxVol = 0, pocIdx = -1;
+      for (let i = 0; i < bucketCount; i++) {
+        vols[i] = volUp[i] + volDown[i];
+        totalVol += vols[i];
+        if (vols[i] > maxVol) { maxVol = vols[i]; pocIdx = i; }
+      }
+      if (totalVol <= 0 || pocIdx < 0) break;
+      const priceOf = (i: number): number => loP + (i + 0.5) * bucketSize;
+      const pocPrice = priceOf(pocIdx);
+
+      // 70% value area — expand contiguously outward from the POC
+      let vaLo = pocIdx, vaHi = pocIdx, vaVol = vols[pocIdx];
+      const targetVol = totalVol * 0.7;
+      while (vaVol < targetVol && (vaLo > 0 || vaHi < bucketCount - 1)) {
+        const below = vaLo > 0 ? vols[vaLo - 1] : -1;
+        const above = vaHi < bucketCount - 1 ? vols[vaHi + 1] : -1;
+        if (above >= below) { vaHi++; vaVol += vols[vaHi]; }
+        else { vaLo--; vaVol += vols[vaLo]; }
+      }
+      const val = loP + vaLo * bucketSize;
+      const vah = loP + (vaHi + 1) * bucketSize;
+
+      // anchor the histogram to the left edge of the selected time range,
+      // bars growing rightward — TradingView's fixed-range placement
+      const startX = d.timeToX(startTime);
+      const endX = d.timeToX(endTime);
+      const x1 = Math.max(d.left, Math.min(startX, endX));
+      const x2 = Math.min(d.right, Math.max(startX, endX));
+      if (x2 <= x1) break;
+      const rangeW = x2 - x1;
+      const profileWidth = Math.min(160, Math.max(44, rangeW * 0.55));
+      const profileLeft = x1;
+      const rowPx = Math.max(1, Math.abs(d.priceToY(loP) - d.priceToY(loP + bucketSize)));
+
+      // histogram — TradingView's up/down split: each row is a green segment
+      // (up volume) followed by a red segment (down volume), scaled to the
+      // busiest row. Value-area rows are vivid, tails are dimmed.
+      const upColor = palette().up;
+      const downColor = palette().down;
+      for (let i = 0; i < bucketCount; i++) {
+        const rowVol = vols[i];
+        if (rowVol <= 0) continue;
+        const y = d.priceToY(priceOf(i));
+        const rowW = (rowVol / maxVol) * profileWidth;
+        const upW = (volUp[i] / rowVol) * rowW;
+        const downW = rowW - upW;
+        const inVa = i >= vaLo && i <= vaHi;
+        ctx.globalAlpha = inVa ? 0.9 : 0.45;
+        if (upW > 0.25) {
+          ctx.fillStyle = upColor;
+          ctx.fillRect(profileLeft, y - rowPx / 2, upW, rowPx + 0.5);
+        }
+        if (downW > 0.25) {
+          ctx.fillStyle = downColor;
+          ctx.fillRect(profileLeft + upW, y - rowPx / 2, downW, rowPx + 0.5);
         }
       }
-      
-      if (buckets.size === 0) break;
-      
-      // Find max volume and POC
-      let maxVol = 0, pocPrice = 0;
-      for (const [price, vol] of buckets) {
-        if (vol > maxVol) { maxVol = vol; pocPrice = price; }
-      }
-      if (maxVol === 0) break;
-      
-      // Draw histogram bars extending left from right edge
-      const profileWidth = 120;
-      const profileRight = d.right;
-      const profileLeft = profileRight - profileWidth;
-      
-      ctx.save();
-      ctx.globalAlpha = 0.5;
-      
-      for (const [price, vol] of buckets) {
-        const y = d.priceToY(price);
-        const barWidth = (vol / maxVol) * profileWidth;
-        
-        // Color based on whether price is above/below POC
-        ctx.fillStyle = price >= pocPrice ? "rgba(38, 166, 154, 0.7)" : "rgba(239, 83, 80, 0.7)";
-        ctx.fillRect(profileLeft, y - 2, barWidth, 4);
-      }
-      
-      // POC line - horizontal across the chart
-      const pocY = d.priceToY(pocPrice);
+      ctx.globalAlpha = 1;
+
+      // selection box edges
+      ctx.strokeStyle = "rgba(41, 98, 255, 0.45)";
+      ctx.lineWidth = 1;
+      ctx.setLineDash([4, 4]);
+      ctx.beginPath();
+      ctx.moveTo(x1, d.priceToY(hiP)); ctx.lineTo(x2, d.priceToY(hiP));
+      ctx.moveTo(x1, d.priceToY(loP)); ctx.lineTo(x2, d.priceToY(loP));
+      ctx.moveTo(x1, d.priceToY(hiP)); ctx.lineTo(x1, d.priceToY(loP));
+      ctx.moveTo(x2, d.priceToY(hiP)); ctx.lineTo(x2, d.priceToY(loP));
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // POC + value-area levels across the range
       ctx.strokeStyle = "#ffd200";
       ctx.lineWidth = 1.5;
       ctx.setLineDash([5, 5]);
-      ctx.beginPath();
-      ctx.moveTo(d.left, pocY);
-      ctx.lineTo(d.right, pocY);
-      ctx.stroke();
+      const pocY = d.priceToY(pocPrice);
+      ctx.beginPath(); ctx.moveTo(x1, pocY); ctx.lineTo(x2, pocY); ctx.stroke();
       ctx.setLineDash([]);
-      
-      // POC label
-      ctx.fillStyle = "#ffd200";
-      ctx.font = "bold 10px sans-serif";
-      ctx.textAlign = "left";
-      ctx.fillText(`POC: ${pocPrice.toFixed(2)}`, d.left + 4, pocY - 4);
-      
-      // VAH/VAL (Value Area High/Low - 70% of volume)
-      const sorted = [...buckets.entries()].sort((a, b) => b[1] - a[1]);
-      let cumVol = 0;
-      const targetVol = maxVol * 0.7;
-      let vah = pocPrice, val = pocPrice;
-      for (const [price, vol] of sorted) {
-        cumVol += vol;
-        if (cumVol >= targetVol) break;
-        vah = Math.max(vah, price);
-        val = Math.min(val, price);
-      }
-      
-      // Value Area lines
-      ctx.strokeStyle = "rgba(255, 210, 0, 0.5)";
+
+      ctx.strokeStyle = "rgba(255, 210, 0, 0.55)";
       ctx.lineWidth = 1;
       ctx.setLineDash([3, 6]);
       for (const price of [vah, val]) {
         const y = d.priceToY(price);
-        ctx.beginPath();
-        ctx.moveTo(d.left, y);
-        ctx.lineTo(d.right, y);
-        ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(x1, y); ctx.lineTo(x2, y); ctx.stroke();
       }
       ctx.setLineDash([]);
-      
-      // Range boundary lines (vertical)
-      ctx.strokeStyle = "rgba(41, 98, 255, 0.6)";
-      ctx.lineWidth = 1;
-      ctx.setLineDash([4, 4]);
-      const startX = d.timeToX(startTime);
-      const endX = d.timeToX(endTime);
-      for (const x of [startX, endX]) {
-        ctx.beginPath();
-        ctx.moveTo(x, d.top);
-        ctx.lineTo(x, d.bottom);
-        ctx.stroke();
-      }
-      ctx.setLineDash([]);
-      
-      ctx.restore();
+
+      // labels
+      ctx.font = "bold 10px sans-serif";
+      ctx.textAlign = "right";
+      ctx.textBaseline = "bottom";
+      ctx.fillStyle = "#ffd200";
+      ctx.fillText(`POC ${fmtPriceLabel(pocPrice)}`, x2 - 4, pocY - 3);
+      ctx.fillStyle = "rgba(255, 210, 0, 0.85)";
+      ctx.textBaseline = "middle";
+      ctx.fillText(`VAH ${fmtPriceLabel(vah)}`, x2 - 4, d.priceToY(vah) - 7);
+      ctx.fillText(`VAL ${fmtPriceLabel(val)}`, x2 - 4, d.priceToY(val) + 7);
+
       break;
     }
     case "fib": {

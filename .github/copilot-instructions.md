@@ -105,3 +105,32 @@ not copied from their proprietary bundles (repo guardrail on bundle code).
 
 **Verify:** rebuild, Ctrl+Shift+R, confirm every rail icon renders crisply at
 20px and the active tool shows the blue accent.
+
+### Fixed-range volume profile — correctness overhaul
+
+**Symptom:** the `volprofile` tool rendered but had real defects: it was
+computed from the visible slice only (panning/zooming changed or hid it), the
+histogram was anchored to the chart's right edge instead of the selection, the
+value area used 70% of the *largest bucket* instead of 70% of total volume,
+bars overlapped or left gaps depending on zoom, and the eraser couldn't hit it.
+
+**Files changed:** `src/drawtools.ts`, `src/pane.ts`
+- `volprofile` now reads full history via new optional `DrawCtx.allCandles`
+  (populated from `this.candles` in `buildDrawCtx`) so the profile stays fixed
+  when the range scrolls off-screen.
+- Histogram anchored to the selected range's **left** edge, bars growing
+  rightward (TradingView placement); width scales with the range.
+- **TradingView up/down coloring:** each row is split into a green up-volume
+  segment followed by a red down-volume segment (close ≥ open = up, else down),
+  using the active theme's `palette().up`/`palette().down` so it matches the
+  candles. Value-area rows draw at 0.9 alpha, tails at 0.45.
+- Value area expands contiguously outward from the POC to 70% of total volume;
+  POC/VAH/VAL lines only span the selection.
+- Pixel-height rows from bucket size (no overlap/gaps); zero-height selection
+  guarded; price labels use instrument-scaled decimals.
+- `hitTest` gained a `volprofile` case (whole selection box) so the eraser
+  works.
+
+**Verify:** add `volprofile`, click twice over a range — green/red split bars
+sit at the left edge of the selection growing right, POC/VAH/VAL label
+correctly; pan away and it stays; eraser click inside the box deletes it.
