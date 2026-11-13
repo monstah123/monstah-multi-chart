@@ -62,6 +62,26 @@ the constraints below hold until the user (repo owner) explicitly revokes one.
 
 ## Recent fixes (applied to this repo)
 
+### Symbol picker works in pane fullscreen
+
+**Symptom:** choosing a symbol from the top-left grouped picker while a pane
+was fullscreen changed nothing on screen. Grid mode worked.
+
+**Root cause:** the picker always called `addPane()`. In pane fullscreen the new
+pane was created in the grid *behind* the fixed fullscreen overlay, so the
+visible chart never changed (and the pane count silently grew).
+
+**Files changed:** `src/main.ts`
+- Added `chooseSymbol()`: if a pane has the `fullscreen` class it switches that
+  pane in place with `setSymbol()` and saves the session; otherwise it keeps the
+  existing grid behavior of adding a pane.
+- The grouped picker and the symbol-input Enter key both use `chooseSymbol()`.
+
+**Verify:** fullscreen a pane, pick `SOLUSDT` from the top-left `▾` menu — the
+visible chart and fullscreen badge switch to SOLUSDT with no extra pane behind
+it (headless test: pane count stays 4, session symbol updates). Exit fullscreen,
+pick another symbol — a new grid pane still opens as before.
+
 ### Price alerts ring for 10 seconds
 
 **Request:** one short beep is too easy to miss; a fired alert should ring for

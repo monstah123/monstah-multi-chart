@@ -128,8 +128,7 @@ for (const t of TF) {
         item.textContent = sym;
         item.addEventListener("click", (e) => {
           e.stopPropagation();
-          symbolInput.value = sym;
-          addPane(sym, state.lastTimeframe); // click now opens the chart straight away
+          chooseSymbol(sym);
           closeOtherDropdowns(null);
         });
         panel.append(item);
@@ -287,6 +286,22 @@ function applyLayout(key: string): void {
 }
 
 // ─── panes ────────────────────────────────────────────────────────────
+/** Load a symbol from the top-left picker/input. In fullscreen the visible
+ *  pane must switch in place; adding a pane would put it behind the overlay. */
+function chooseSymbol(symbol: string): void {
+  const s = symbol.trim().toUpperCase();
+  if (!s) return;
+  symbolInput.value = s;
+  const fullscreenPane = state.panes.find((p) => p.wrap.classList.contains("fullscreen"));
+  if (fullscreenPane) {
+    if (fullscreenPane.symbol !== s) fullscreenPane.setSymbol(s);
+    saveSession();
+    setStatus(`Loaded ${s} in the fullscreen chart`);
+    return;
+  }
+  addPane(s, state.lastTimeframe);
+}
+
 function addPane(symbol = symbolInput.value.trim().toUpperCase(), timeframe = state.lastTimeframe): void {
   const s = symbol || "BTCUSDT";
   const id = state.panes.length ? Math.max(...state.panes.map((p) => p.id)) + 1 : 1;
@@ -513,7 +528,7 @@ function restoreSession(): boolean {
 // ─── add-pane button + Enter on symbol input ──────────────────────────
 addPaneBtn.addEventListener("click", () => addPane());
 symbolInput.addEventListener("keydown", (e) => {
-  if (e.key === "Enter") { e.preventDefault(); addPane(); }
+  if (e.key === "Enter") { e.preventDefault(); chooseSymbol(symbolInput.value || "BTCUSDT"); }
 });
 
 // ─── hotkeys ──────────────────────────────────────────────────────────
