@@ -62,6 +62,27 @@ the constraints below hold until the user (repo owner) explicitly revokes one.
 
 ## Recent fixes (applied to this repo)
 
+### Price alerts ring for 10 seconds
+
+**Request:** one short beep is too easy to miss; a fired alert should ring for
+10 seconds.
+
+**Files changed:** `src/alerts.ts`
+- Replaced the one-shot 420ms beep with a repeating three-note chime
+  (A5 → C6 → E6) every 0.9s for 10 seconds, scheduled up front on the Web Audio
+  timeline so it keeps going even if the tab is busy.
+- One shared `AudioContext` is created/resumed on the first pointerdown or
+  keydown, which satisfies iOS Safari's user-gesture audio policy before an
+  alert fires later.
+- A new hit restarts the 10-second ring. The alert toast stays visible for the
+  full ring and is clickable to stop the sound immediately.
+- Toast text: `… · ringing 10s — tap to stop`.
+
+**Verify:** trigger an alert (or call `checkPrice` across an alert level) — the
+ascending triple chime repeats for ~10s; tapping the toast stops it at once.
+Chrome headless test instruments `createOscillator`: 34 oscillators scheduled,
+0→1 `GainNode.disconnect()` when the toast is tapped.
+
 ### Eraser and undo now remove price-alert lines
 
 **Symptom:** on iPad Safari, horizontal price-alert lines could not be removed

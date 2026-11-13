@@ -57,22 +57,81 @@ export function clearAlerts(): void {
 }
 
 // ─── sound / notification / toast ────────────────────────────────────
-function beep(): void {
+const ALARM_MS = 10_000;       // ring this long after an alert fires
+const ALARM_CYCLE_MS = 900;    // start a fresh triple-chime this often
+
+let audioCtx: AudioContext | null = null;
+let alarmGain: GainNode | null = null;
+let alarmStopTimer: number | null = null;
+let alarmGeneration = 0;
+
+/** One shared context, created/resumed on a real user gesture so iOS Safari
+ *  will actually play sound later when an alert fires. */
+function audio(): AudioContext | null {
   try {
     const AC = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-    if (!AC) return;
-    const ctx = new AC();
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.type = "sine";
-    osc.frequency.value = 880;
-    gain.gain.value = 0.12;
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    osc.start();
-    window.setTimeout(() => { osc.frequency.value = 1320; }, 150);
-    window.setTimeout(() => { osc.stop(); void ctx.close(); }, 420);
-  } catch { /* audio blocked */ }
+    if (!AC) return null;
+    if (!audioCtx) audioCtx = new AC();
+    if (audioCtx.state === "suspended") void audioCtx.resume();
+    return audioCtx;
+  } catch { return null; }
+}
+
+function unlockAudio(): void { void audio(); }
+document.addEventListener("pointerdown", unlockAudio, true);
+document.addEventListener("keydown", unlockAudio, true);
+
+function stopAlarm(): void {
+  alarmGeneration++;
+  if (alarmStopTimer !== null) {
+    window.clearTimeout(alarmStopTimer);
+    alarmStopTimer = null;
+  }
+  if (alarmGain) {
+    try { alarmGain.disconnect(); } catch { /* already gone */ }
+    alarmGain = null;
+  }
+}
+
+/** 10-second repeating alert chime — three ascending notes every 0.9s. */
+function ringAlarm(): void {
+  const ctx = audio();
+  if (!ctx) return;
+  stopAlarm();
+  const generation = alarmGeneration;
+  const start = () => {
+    // a newer alert (or a tap-to-stop) superseded this pending start
+    if (generation !== alarmGeneration || ctx.state !== "running") return;
+    const master = ctx.createGain();
+    master.gain.value = 1;
+    master.connect(ctx.destination);
+    alarmGain = master;
+    const now = ctx.currentTime + 0.02;
+    const ringSec = ALARM_MS / 1000;
+    const cycleSec = ALARM_CYCLE_MS / 1000;
+    const tones = [880, 1046.5, 1318.5]; // A5 → C6 → E6
+    for (let base = 0; base < ringSec; base += cycleSec) {
+      for (let i = 0; i < tones.length; i++) {
+        const offset = base + i * 0.16;
+        if (offset >= ringSec) break;
+        const at = now + offset;
+        const osc = ctx.createOscillator();
+        const env = ctx.createGain();
+        osc.type = "sine";
+        osc.frequency.setValueAtTime(tones[i], at);
+        env.gain.setValueAtTime(0.0001, at);
+        env.gain.exponentialRampToValueAtTime(0.14, at + 0.015);
+        env.gain.exponentialRampToValueAtTime(0.0001, at + 0.14);
+        osc.connect(env);
+        env.connect(master);
+        osc.start(at);
+        osc.stop(at + 0.16);
+      }
+    }
+    alarmStopTimer = window.setTimeout(stopAlarm, ALARM_MS + 250);
+  };
+  if (ctx.state === "suspended") void ctx.resume().then(start).catch(() => { /* blocked */ });
+  else start();
 }
 
 export function ensureNotificationPermission(): void {
@@ -91,7 +150,7 @@ function notifyBrowser(title: string, body: string): void {
 }
 
 let toastHost: HTMLElement | null = null;
-function toast(text: string, kind: "alert" | "info" = "info"): void {
+function toast(text: string, kind: "alert" | "info" = "info", holdMs = 4200, onTap?: () => void): void {
   if (!toastHost) {
     toastHost = document.createElement("div");
     toastHost.id = "toastHost";
@@ -100,9 +159,15 @@ function toast(text: string, kind: "alert" | "info" = "info"): void {
   const el = document.createElement("div");
   el.className = `toast ${kind}`;
   el.textContent = text;
+  if (onTap) {
+    el.style.pointerEvents = "auto";
+    el.style.cursor = "pointer";
+    el.title = "click to stop the alarm";
+    el.addEventListener("click", () => { onTap(); el.remove(); });
+  }
   toastHost.append(el);
-  window.setTimeout(() => { el.classList.add("fade"); }, 4200);
-  window.setTimeout(() => { el.remove(); }, 5200);
+  window.setTimeout(() => { el.classList.add("fade"); }, holdMs);
+  window.setTimeout(() => { el.remove(); }, holdMs + 1000);
 }
 
 // ─── checking ────────────────────────────────────────────────────────
@@ -122,10 +187,10 @@ export function checkPrice(symbol: string, price: number): PriceAlert[] {
   if (hit.length === 0) return [];
   const hitIds = new Set(hit.map((a) => a.id));
   write(alerts.filter((a) => !hitIds.has(a.id)));
+  ringAlarm();
   for (const a of hit) {
-    beep();
     notifyBrowser(`⚡ ${a.symbol} alert`, `${a.symbol} crossed ${fmt(a.price)} — now ${fmt(price)}`);
-    toast(`⚡ ${a.symbol} crossed ${fmt(a.price)} (now ${fmt(price)})`, "alert");
+    toast(`⚡ ${a.symbol} crossed ${fmt(a.price)} (now ${fmt(price)}) · ringing 10s — tap to stop`, "alert", ALARM_MS, stopAlarm);
   }
   refreshUi();
   return hit;
