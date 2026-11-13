@@ -577,7 +577,7 @@ const TOOL_DEFS: { id: ToolId; svg: string; title: string }[] = [
   { id: "brush", svg: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20l4-1 11-11-3-3L5 16l-1 4z"/><line x1="13" y1="8" x2="16" y2="11"/></svg>`, title: "brush — freehand (drag)" },
   { id: "alert", svg: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>`, title: "price alert — click a level" },
   { id: "text", svg: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><polyline points="5 7 5 4.5 19 4.5 19 7"/><line x1="12" y1="4.5" x2="12" y2="19.5"/><line x1="9" y1="19.5" x2="15" y2="19.5"/></svg>`, title: "text label" },
-  { id: "eraser", svg: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21"/><path d="M22 21H7"/><path d="m5 11 9 9"/></svg>`, title: "eraser (click a drawing)" },
+  { id: "eraser", svg: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21"/><path d="M22 21H7"/><path d="m5 11 9 9"/></svg>`, title: "eraser (click a drawing or price alert)" },
 ];
 const toolButtonsEl = document.getElementById("toolButtons") as HTMLElement;
 const lineColorRow = document.getElementById("lineColorRow") as HTMLElement;
@@ -594,7 +594,7 @@ function applyTool(tool: ToolId): void {
   cursorInfo.textContent = tool;
   const clicks = CLICK_COUNT[tool] ?? 0;
   if (tool === "cross") setStatus("Cursor mode — drag to pan, wheel to zoom, double-click to reset zoom.");
-  else if (tool === "eraser") setStatus("Eraser — click any drawing on the chart to delete it.");
+  else if (tool === "eraser") setStatus("Eraser — click any drawing or price-alert line to delete it.");
   else if (tool === "alert") setStatus("🔔 Alert — click a price level; you'll get a sound + browser notification when price crosses it.");
   else if (tool === "brush") setStatus("Brush — press and drag on the chart to draw freehand.");
   else if (clicks >= 2) setStatus(`${tool} — click the chart ${clicks} times. Right-click or Esc cancels.`);
@@ -614,11 +614,13 @@ for (const def of TOOL_DEFS) {
 
 const undoBtn = document.createElement("button");
 undoBtn.className = "tool-btn";
-undoBtn.title = "undo last drawing on the active chart";
+undoBtn.title = "undo last drawing or price alert on the active chart";
 undoBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg>`;
 undoBtn.addEventListener("click", () => {
   const p = focusedPane ?? state.panes[0];
-  if (p?.undoDrawing()) setStatus("Undid last drawing.");
+  const undone = p?.undoDrawing() ?? null;
+  if (undone === "drawing") setStatus("Undid last drawing.");
+  else if (undone === "alert") setStatus(`Removed last price alert on ${p?.symbol}.`);
   else setStatus("Nothing to undo on this chart.");
 });
 toolButtonsEl.append(undoBtn);

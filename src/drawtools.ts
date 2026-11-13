@@ -39,6 +39,8 @@ export interface Shape {
   text?: string;
   color: string;
   width: number;
+  /** creation time (ms) — lets undo pick the newest drawing vs price alert */
+  createdAt?: number;
 }
 
 export type StrokeStyle = { color: string; width: number };

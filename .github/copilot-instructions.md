@@ -62,6 +62,33 @@ the constraints below hold until the user (repo owner) explicitly revokes one.
 
 ## Recent fixes (applied to this repo)
 
+### Eraser and undo now remove price-alert lines
+
+**Symptom:** on iPad Safari, horizontal price-alert lines could not be removed
+with the eraser or Undo. Reloading kept them. Opening the same URL in Chrome
+showed no lines — because alert storage is per-browser, not because they were
+deleted.
+
+**Root cause:** alert lines are rendered from `listAlerts()` separately from
+`this.shapes`. The eraser only hit-tested drawings, and `undoDrawing()` only
+popped drawings, so alert objects in `mc-alerts:v1` were untouched.
+
+**Files changed:** `src/pane.ts`, `src/main.ts`, `src/drawtools.ts`
+- Eraser now checks the nearest visible alert for the pane's symbol before
+  checking drawings, then calls `removeAlert()` and redraws. Touch and pen get a
+  24px hit radius (mouse 10px), so a finger does not need to land exactly on
+  the dashed line.
+- `undoDrawing()` now returns `"drawing" | "alert" | null` and removes whichever
+  action is newer. Shapes gained an optional `createdAt` timestamp; older
+  persisted shapes without one are treated as older than any live alert.
+- Tool title and status text now say the eraser removes drawings **or** alerts.
+
+**Verify:** create an alert with the bell tool, pick the eraser, tap the line —
+it disappears and `mc-alerts:v1` loses the entry. Create an alert (no drawings)
+and press Undo — the alert is removed. Create a drawing and an alert, then Undo
+twice — the newer action goes first. Alerts remain browser-local by design:
+Safari and Chrome have separate stores.
+
 ### Modern TradingView-style toolbar icons (left drawing rail)
 
 **Symptom:** the left drawing-tool rail used plain 2px cross/line glyphs that

@@ -12,7 +12,8 @@ import { loadHistory, loadYahooRefresh, loadIbCandles, loadIbHistory, isBinanceS
 import { listShapes, saveShapes, hitTest, drawShape, newShapeId, CLICK_COUNT, DRAG_TOOLS } from "./drawtools.js";
 import { palette } from "./theme.js";
 import type { Shape, ToolId, Anchor, DrawCtx } from "./drawtools.js";
-import { listAlerts, addAlert, checkPrice, ensureNotificationPermission } from "./alerts.js";
+import { listAlerts, addAlert, removeAlert, checkPrice, ensureNotificationPermission } from "./alerts.js";
+import type { PriceAlert } from "./alerts.js";
 
 export interface PaneCallbacks {
   onStatus: (msg: string) => void;
@@ -1066,7 +1067,7 @@ export class ChartPane {
   private onPointerUp = (): void => {
     if (this.brushPts && this.brushPts.length > 1) {
       const pts = this.brushPts;
-      this.shapes.push({ id: newShapeId(), kind: "brush", a: pts[0], pts, color: this.strokeColor, width: this.strokeWidth });
+      this.shapes.push({ id: newShapeId(), kind: "brush", a: pts[0], pts, color: this.strokeColor, width: this.strokeWidth, createdAt: Date.now() });
       saveShapes(this.symbol, this.timeframe, this.shapes);
     }
     this.brushPts = null;
@@ -1132,11 +1133,42 @@ export class ChartPane {
     return g.slice[fi].t + (g.slice[fi + 1].t - g.slice[fi].t) * frac;
   }
 
+  /** Price alert whose dashed level is closest to this canvas y position. */
+  private alertNearY(y: number, tolerance: number): PriceAlert | null {
+    const g = this.geom;
+    if (!g) return null;
+    const d = this.buildDrawCtx(this.ctx, g);
+    const sym = this.symbol.toUpperCase();
+    let best: PriceAlert | null = null;
+    let bestDist = Infinity;
+    for (const alert of listAlerts()) {
+      if (alert.symbol !== sym) continue;
+      const ay = d.priceToY(alert.price);
+      if (ay < g.top - tolerance || ay > g.priceBot + tolerance) continue;
+      const dist = Math.abs(y - ay);
+      if (dist <= tolerance && dist < bestDist) {
+        best = alert;
+        bestDist = dist;
+      }
+    }
+    return best;
+  }
+
   private handleToolPointerDown(e: PointerEvent): void {
     if (!this.geom) return;
     const rect = this.canvas.getBoundingClientRect();
     const x = e.clientX - rect.left, y = e.clientY - rect.top;
     if (this.drawTool === "eraser") {
+      // Alert lines are rendered separately from drawings, so the eraser must
+      // check them explicitly. Touch gets a much wider hit target than a mouse.
+      const alertTol = e.pointerType === "touch" || e.pointerType === "pen" ? 24 : 10;
+      const alert = this.alertNearY(y, alertTol);
+      if (alert) {
+        removeAlert(alert.id);
+        this.cb.onStatus(`🔔 Alert removed: ${this.symbol} ${fmtPrice(alert.price)}`);
+        this.requestFitAndDraw();
+        return;
+      }
       const d = this.buildDrawCtx(this.ctx, this.geom);
       for (let i = this.shapes.length - 1; i >= 0; i--) {
         if (hitTest({ x, y }, this.shapes[i], d)) {
@@ -1178,6 +1210,7 @@ export class ChartPane {
         text,
         color: this.strokeColor,
         width: this.strokeWidth,
+        createdAt: Date.now(),
       });
       saveShapes(this.symbol, this.timeframe, this.shapes);
       this.cb.onToolDone?.(this.id);
@@ -1232,12 +1265,28 @@ export class ChartPane {
     this.requestFitAndDraw();
   }
 
-  undoDrawing(): boolean {
-    if (this.shapes.length === 0) return false;
-    this.shapes.pop();
-    saveShapes(this.symbol, this.timeframe, this.shapes);
-    this.requestFitAndDraw();
-    return true;
+  /** Undo the most recent action: a drawing or a price alert. */
+  undoDrawing(): "drawing" | "alert" | null {
+    const sym = this.symbol.toUpperCase();
+    let lastAlert: PriceAlert | null = null;
+    for (const alert of listAlerts()) {
+      if (alert.symbol !== sym) continue;
+      if (!lastAlert || alert.createdAt > lastAlert.createdAt) lastAlert = alert;
+    }
+    const lastShape = this.shapes[this.shapes.length - 1];
+    const shapeTime = lastShape?.createdAt ?? 0;
+    if (lastAlert && lastAlert.createdAt >= shapeTime) {
+      removeAlert(lastAlert.id);
+      this.requestFitAndDraw();
+      return "alert";
+    }
+    if (this.shapes.length > 0) {
+      this.shapes.pop();
+      saveShapes(this.symbol, this.timeframe, this.shapes);
+      this.requestFitAndDraw();
+      return "drawing";
+    }
+    return null;
   }
 
   clearDrawings(): number {
