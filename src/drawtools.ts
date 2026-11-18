@@ -71,6 +71,34 @@ function getPipSize(symbol: string): number {
   return 0.01; // stocks default
 }
 
+/** Minimum tick size (price increment) for volume profile bucketing */
+function getTickSize(symbol: string): number {
+  const s = symbol.toUpperCase();
+  // FX majors — volume profile typically uses 1-pip buckets (0.0001), not fractional pips
+  if (/^[A-Z]{6}=X$/.test(s)) {
+    if (s.includes("JPY")) return 0.01; // JPY pairs: 1 pip = 0.01
+    return 0.0001; // Other majors: 1 pip = 0.0001
+  }
+  // Crypto — Binance style tick sizes (price-aware refinement below)
+  if (s.endsWith("USDT") || s.endsWith("BTC") || s.endsWith("ETH") || s.endsWith("USDC")) {
+    return 0.01; // Base default, refined by getCryptoTickSize()
+  }
+  // Futures/indices
+  if (s.startsWith("^") || s.includes("=F")) return 0.25;
+  // Stocks — typically $0.01
+  return 0.01;
+}
+
+/** Get price-aware tick size for crypto (varies by price level) */
+function getCryptoTickSize(price: number): number {
+  if (price >= 10000) return 1.0;      // BTC > $10k: $1 ticks
+  if (price >= 1000) return 0.1;       // $1k-$10k: $0.10 ticks
+  if (price >= 100) return 0.01;       // $100-$1k: $0.01 ticks
+  if (price >= 10) return 0.001;       // $10-$100: $0.001 ticks
+  if (price >= 1) return 0.0001;       // $1-$10: $0.0001 ticks
+  return 0.00001;                      // < $1: $0.00001 ticks
+}
+
 /** Estimate bars between two timestamps for a given timeframe */
 function getBarsBetween(t1: number, t2: number, timeframe: string): number {
   const ms: Record<string, number> = {
@@ -320,11 +348,11 @@ export function drawShape(shape: Shape, d: DrawCtx): void {
       if (pts.length < 2) break;
       const b = shape.b;
       if (!b) break;
-      const loP = Math.min(shape.a.p, b.p);
-      const hiP = Math.max(shape.a.p, b.p);
-      if (!(hiP > loP)) break; // zero-height selection — nothing to bucket
       const startTime = Math.min(shape.a.t, b.t);
       const endTime = Math.max(shape.a.t, b.t);
+      // User's price anchors (for selection box visual only)
+      const userLoP = Math.min(shape.a.p, b.p);
+      const userHiP = Math.max(shape.a.p, b.p);
 
       // Fixed-range profile must use the whole history for that window, not
       // just the bars currently on screen — otherwise panning/zooming changes
@@ -335,48 +363,85 @@ export function drawShape(shape: Shape, d: DrawCtx): void {
       );
       if (rangeCandles.length === 0) break;
 
-      // price buckets — one row per bucket, filled by each candle's H-L span.
-      // Volume is split into up/down the way TradingView does it: a bar whose
-      // close is at or above its open counts as up volume, otherwise down.
-      const bucketCount = 30;
-      const bucketSize = (hiP - loP) / bucketCount;
-      const volUp = new Array<number>(bucketCount).fill(0);
-      const volDown = new Array<number>(bucketCount).fill(0);
+      // Determine actual price range from candles in the time range (TradingView behavior)
+      let candleLo = Infinity, candleHi = -Infinity;
       for (const c of rangeCandles) {
-        const cLo = Math.max(Math.min(c.l, c.h), loP);
-        const cHi = Math.min(Math.max(c.l, c.h), hiP);
+        candleLo = Math.min(candleLo, c.l);
+        candleHi = Math.max(candleHi, c.h);
+      }
+      if (!(candleHi > candleLo)) break;
+
+      // Determine tick size for bucketing — TradingView uses instrument tick size
+      // to define bucket boundaries, not a fixed bucket count.
+      const symbol = d.symbol ?? "";
+      let tickSize = getTickSize(symbol);
+      // For crypto, tick size varies by price level — use mid-price of candle range
+      if (symbol.endsWith("USDT") || symbol.endsWith("BTC") || symbol.endsWith("ETH") || symbol.endsWith("USDC")) {
+        const midPrice = (candleLo + candleHi) / 2;
+        tickSize = getCryptoTickSize(midPrice);
+      }
+
+      // Align bucket boundaries to tick grid (TradingView behavior)
+      const bucketLo = Math.floor(candleLo / tickSize) * tickSize;
+      const bucketHi = Math.ceil(candleHi / tickSize) * tickSize;
+      const bucketCount = Math.max(1, Math.round((bucketHi - bucketLo) / tickSize));
+
+      // Cap bucket count for performance (TradingView uses ~1000-2000 rows for fine detail)
+      const MAX_BUCKETS = 1500;
+      const effectiveBucketSize = bucketCount > MAX_BUCKETS
+        ? (bucketHi - bucketLo) / MAX_BUCKETS
+        : tickSize;
+      const effectiveBucketCount = bucketCount > MAX_BUCKETS ? MAX_BUCKETS : bucketCount;
+
+      const volUp = new Array<number>(effectiveBucketCount).fill(0);
+      const volDown = new Array<number>(effectiveBucketCount).fill(0);
+
+      // Distribute volume using TradingView's method:
+      // Volume is distributed across the candle's H-L range proportionally.
+      // TradingView uses a "volume at price" approach where each candle's volume
+      // is spread across its High-Low range. The distribution within the range
+      // is typically uniform (each price level gets equal share), but weighted
+      // by up/down based on close vs open.
+      for (const c of rangeCandles) {
+        const cLo = c.l;
+        const cHi = c.h;
         if (cHi < cLo) continue;
-        let s = Math.floor((cLo - loP) / bucketSize);
-        let e = Math.floor((cHi - loP) / bucketSize);
-        s = Math.max(0, Math.min(bucketCount - 1, s));
-        e = Math.max(0, Math.min(bucketCount - 1, e));
-        const share = c.v / (e - s + 1);
+
+        // Map candle price range to bucket indices (using aligned bucket grid)
+        let s = Math.floor((cLo - bucketLo) / effectiveBucketSize);
+        let e = Math.floor((cHi - bucketLo) / effectiveBucketSize);
+        s = Math.max(0, Math.min(effectiveBucketCount - 1, s));
+        e = Math.max(0, Math.min(effectiveBucketCount - 1, e));
+
+        const bucketsSpanned = e - s + 1;
+        const share = c.v / bucketsSpanned;
         const side = c.c >= c.o ? volUp : volDown;
         for (let i = s; i <= e; i++) side[i] += share;
       }
 
-      const vols = new Array<number>(bucketCount);
+      const vols = new Array<number>(effectiveBucketCount);
       let totalVol = 0, maxVol = 0, pocIdx = -1;
-      for (let i = 0; i < bucketCount; i++) {
+      for (let i = 0; i < effectiveBucketCount; i++) {
         vols[i] = volUp[i] + volDown[i];
         totalVol += vols[i];
         if (vols[i] > maxVol) { maxVol = vols[i]; pocIdx = i; }
       }
       if (totalVol <= 0 || pocIdx < 0) break;
-      const priceOf = (i: number): number => loP + (i + 0.5) * bucketSize;
+
+      const priceOf = (i: number): number => bucketLo + (i + 0.5) * effectiveBucketSize;
       const pocPrice = priceOf(pocIdx);
 
       // 70% value area — expand contiguously outward from the POC
       let vaLo = pocIdx, vaHi = pocIdx, vaVol = vols[pocIdx];
       const targetVol = totalVol * 0.7;
-      while (vaVol < targetVol && (vaLo > 0 || vaHi < bucketCount - 1)) {
+      while (vaVol < targetVol && (vaLo > 0 || vaHi < effectiveBucketCount - 1)) {
         const below = vaLo > 0 ? vols[vaLo - 1] : -1;
-        const above = vaHi < bucketCount - 1 ? vols[vaHi + 1] : -1;
+        const above = vaHi < effectiveBucketCount - 1 ? vols[vaHi + 1] : -1;
         if (above >= below) { vaHi++; vaVol += vols[vaHi]; }
         else { vaLo--; vaVol += vols[vaLo]; }
       }
-      const val = loP + vaLo * bucketSize;
-      const vah = loP + (vaHi + 1) * bucketSize;
+      const val = bucketLo + vaLo * effectiveBucketSize;
+      const vah = bucketLo + (vaHi + 1) * effectiveBucketSize;
 
       // anchor the histogram to the left edge of the selected time range,
       // bars growing rightward — TradingView's fixed-range placement
@@ -386,44 +451,65 @@ export function drawShape(shape: Shape, d: DrawCtx): void {
       const x2 = Math.min(d.right, Math.max(startX, endX));
       if (x2 <= x1) break;
       const rangeW = x2 - x1;
-      const profileWidth = Math.min(160, Math.max(44, rangeW * 0.55));
+      const profileWidth = Math.min(180, Math.max(50, rangeW * 0.6));
       const profileLeft = x1;
-      const rowPx = Math.max(1, Math.abs(d.priceToY(loP) - d.priceToY(loP + bucketSize)));
+      const rawRowPx = Math.abs(d.priceToY(bucketLo) - d.priceToY(bucketLo + effectiveBucketSize));
+      const rowPx = Math.min(5, Math.max(1, rawRowPx)); // cap at 5px for visible but thin rows
 
-      // histogram — TradingView's up/down split: each row is a green segment
-      // (up volume) followed by a red segment (down volume), scaled to the
-      // busiest row. Value-area rows are vivid, tails are dimmed.
-      const upColor = palette().up;
-      const downColor = palette().down;
-      for (let i = 0; i < bucketCount; i++) {
+      // histogram — TradingView style: single bar per row with up/down split,
+      // using theme volume colors (semi-transparent teal/red), gradient fade on right.
+      const volUpColor = palette().volUp;   // e.g. rgba(38,166,154,0.4)
+      const volDownColor = palette().volDown; // e.g. rgba(239,83,80,0.4)
+      const vaAlpha = 1.0;   // value area: fully opaque
+      const tailAlpha = 0.35; // tails: dimmed
+
+      // Parse "rgb(r,g,b)" or "rgba(r,g,b,a)" → [r,g,b]
+      function rgbOf(css: string): [number, number, number] {
+        const m = css.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+        return m ? [+m[1], +m[2], +m[3]] : [38, 166, 154];
+      }
+      const [upR, upG, upB] = rgbOf(volUpColor);
+      const [dnR, dnG, dnB] = rgbOf(volDownColor);
+
+      for (let i = 0; i < effectiveBucketCount; i++) {
         const rowVol = vols[i];
         if (rowVol <= 0) continue;
         const y = d.priceToY(priceOf(i));
         const rowW = (rowVol / maxVol) * profileWidth;
+        if (rowW < 1) continue;
         const upW = (volUp[i] / rowVol) * rowW;
         const downW = rowW - upW;
         const inVa = i >= vaLo && i <= vaHi;
-        ctx.globalAlpha = inVa ? 0.9 : 0.45;
-        if (upW > 0.25) {
-          ctx.fillStyle = upColor;
-          ctx.fillRect(profileLeft, y - rowPx / 2, upW, rowPx + 0.5);
-        }
-        if (downW > 0.25) {
-          ctx.fillStyle = downColor;
-          ctx.fillRect(profileLeft + upW, y - rowPx / 2, downW, rowPx + 0.5);
+        const a = inVa ? vaAlpha : tailAlpha;
+        const h = rowPx; // fractional height for smooth anti-aliased rows
+
+        // Base bar (up volume color) — full row width with gradient fade
+        const grad = ctx.createLinearGradient(profileLeft, 0, profileLeft + rowW, 0);
+        grad.addColorStop(0, `rgba(${upR},${upG},${upB},${a})`);
+        grad.addColorStop(1, `rgba(${upR},${upG},${upB},0)`);
+        ctx.fillStyle = grad;
+        ctx.fillRect(profileLeft, y - h / 2, rowW, h);
+
+        // Down volume overlay (right portion of bar)
+        if (downW > 0.5) {
+          const downGrad = ctx.createLinearGradient(profileLeft + upW, 0, profileLeft + rowW, 0);
+          downGrad.addColorStop(0, `rgba(${dnR},${dnG},${dnB},${a})`);
+          downGrad.addColorStop(1, `rgba(${dnR},${dnG},${dnB},0)`);
+          ctx.fillStyle = downGrad;
+          ctx.fillRect(profileLeft + upW, y - h / 2, downW, h);
         }
       }
       ctx.globalAlpha = 1;
 
-      // selection box edges
+      // selection box edges (user's anchor prices)
       ctx.strokeStyle = "rgba(41, 98, 255, 0.45)";
       ctx.lineWidth = 1;
       ctx.setLineDash([4, 4]);
       ctx.beginPath();
-      ctx.moveTo(x1, d.priceToY(hiP)); ctx.lineTo(x2, d.priceToY(hiP));
-      ctx.moveTo(x1, d.priceToY(loP)); ctx.lineTo(x2, d.priceToY(loP));
-      ctx.moveTo(x1, d.priceToY(hiP)); ctx.lineTo(x1, d.priceToY(loP));
-      ctx.moveTo(x2, d.priceToY(hiP)); ctx.lineTo(x2, d.priceToY(loP));
+      ctx.moveTo(x1, d.priceToY(userHiP)); ctx.lineTo(x2, d.priceToY(userHiP));
+      ctx.moveTo(x1, d.priceToY(userLoP)); ctx.lineTo(x2, d.priceToY(userLoP));
+      ctx.moveTo(x1, d.priceToY(userHiP)); ctx.lineTo(x1, d.priceToY(userLoP));
+      ctx.moveTo(x2, d.priceToY(userHiP)); ctx.lineTo(x2, d.priceToY(userLoP));
       ctx.stroke();
       ctx.setLineDash([]);
 

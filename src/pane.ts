@@ -66,6 +66,10 @@ export class ChartPane {
   private pending: Anchor[] = [];
   private brushPts: Anchor[] | null = null;
   private brushLastPx: { x: number; y: number } | null = null;
+  /** ID of the shape currently hovered for delete-button display */
+  private hoveredShapeId: string | null = null;
+  /** Pixel bounds of the delete button for hit-testing */
+  private deleteBtnBounds: { x: number; y: number; w: number; h: number; shapeId: string } | null = null;
   private geom: { left: number; right: number; top: number; priceBot: number; priceH: number; lo: number; hi: number; slice: Candle[]; plotLen: number } | null = null;
   private resizeObs?: ResizeObserver;
   private rafScheduled = false;
@@ -771,6 +775,43 @@ export class ChartPane {
     const dctx = this.buildDrawCtx(ctx, this.geom);
     for (const s of this.shapes) drawShape(s, dctx);
 
+    // draw delete button on hovered shape
+    if (this.hoveredShapeId && this.crosshair.x !== null && this.crosshair.y !== null) {
+      const hoveredShape = this.shapes.find(s => s.id === this.hoveredShapeId);
+      if (hoveredShape) {
+        const pts = hoveredShape.pts && hoveredShape.pts.length > 0 ? hoveredShape.pts : [hoveredShape.a, ...(hoveredShape.b ? [hoveredShape.b] : [])];
+        const firstPx = dctx.timeToX(pts[0].t);
+        const firstPy = dctx.priceToY(pts[0].p);
+        const btnSize = 18;
+        const btnX = firstPx + 12;
+        const btnY = firstPy - 12;
+
+        // Draw button background (circle)
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(btnX + btnSize / 2, btnY + btnSize / 2, btnSize / 2, 0, Math.PI * 2);
+        ctx.fillStyle = "rgba(239, 83, 80, 0.9)"; // red background
+        ctx.fill();
+        ctx.strokeStyle = "#ffffff";
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+
+        // Draw × symbol
+        ctx.strokeStyle = "#ffffff";
+        ctx.lineWidth = 2;
+        ctx.lineCap = "round";
+        const pad = 5;
+        ctx.beginPath();
+        ctx.moveTo(btnX + pad, btnY + pad);
+        ctx.lineTo(btnX + btnSize - pad, btnY + btnSize - pad);
+        ctx.moveTo(btnX + btnSize - pad, btnY + pad);
+        ctx.lineTo(btnX + pad, btnY + btnSize - pad);
+        ctx.stroke();
+        ctx.restore();
+        // Note: deleteBtnBounds is set in onPointerMove for accurate hit-testing
+      }
+    }
+
     // preview of the in-progress drawing
     const previewPts: Anchor[] | null =
       this.brushPts && this.brushPts.length > 1 ? this.brushPts
@@ -898,6 +939,21 @@ export class ChartPane {
   };
 
   private onPointerDown = (e: PointerEvent): void => {
+    // Handle click on delete button first
+    if (e.button === 0 && this.deleteBtnBounds) {
+      const idx = this.shapes.findIndex(s => s.id === this.deleteBtnBounds!.shapeId);
+      if (idx >= 0) {
+        this.shapes.splice(idx, 1);
+        saveShapes(this.symbol, this.timeframe, this.shapes);
+        this.deleteBtnBounds = null;
+        this.hoveredShapeId = null;
+        this.requestFitAndDraw();
+        this.cb.onStatus("Drawing removed");
+      }
+      e.preventDefault();
+      return;
+    }
+
     // price-scale zoom: drag with left OR right button, in grid or fullscreen
     if ((e.button === 0 || e.button === 2) && this.overPriceAxis(e.clientX)) {
       this.priceDrag = { startY: e.clientY, startZoom: this.priceZoom };
@@ -984,7 +1040,51 @@ export class ChartPane {
   private onPointerMove = (e: PointerEvent): void => {
     const rect = this.canvas.getBoundingClientRect();
     this.crosshair = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+
+    // Track hovered shape for delete button (only in cursor mode)
+    if (this.drawTool === "cross" && this.geom) {
+      const d = this.buildDrawCtx(this.ctx, this.geom);
+      let hitId: string | null = null;
+      let hitBtnBounds: { x: number; y: number; w: number; h: number; shapeId: string } | null = null;
+      const btnSize = 18;
+
+      // Check from top-most shape (last in array)
+      // For each shape, check BOTH the shape hit-test AND its delete button area
+      // This ensures vline/hline buttons work even when button is outside the line's hit zone
+      for (let i = this.shapes.length - 1; i >= 0; i--) {
+        const s = this.shapes[i];
+        const pts = s.pts && s.pts.length > 0 ? s.pts : [s.a, ...(s.b ? [s.b] : [])];
+        const firstPx = d.timeToX(pts[0].t);
+        const firstPy = d.priceToY(pts[0].p);
+        const btnX = firstPx + 12;
+        const btnY = firstPy - 12;
+        const overBtn = this.crosshair.x! >= btnX && this.crosshair.x! <= btnX + btnSize &&
+                        this.crosshair.y! >= btnY && this.crosshair.y! <= btnY + btnSize;
+        const overShape = hitTest({ x: this.crosshair.x!, y: this.crosshair.y! }, s, d);
+
+        if (overShape || overBtn) {
+          hitId = s.id;
+          if (overBtn) {
+            hitBtnBounds = { x: btnX, y: btnY, w: btnSize, h: btnSize, shapeId: s.id };
+          }
+          break;
+        }
+      }
+      this.hoveredShapeId = hitId;
+      this.deleteBtnBounds = hitBtnBounds;
+      // Update cursor: pointer over delete button, otherwise default/grab
+      if (hitBtnBounds) {
+        this.canvas.style.cursor = "pointer";
+      } else if (this.pricePanMode) {
+        this.canvas.style.cursor = "grab";
+      } else {
+        this.canvas.style.cursor = "default";
+      }
+    }
+
     if (this.brushPts) {
+      this.hoveredShapeId = null;
+      this.deleteBtnBounds = null;
       const x = this.crosshair.x, y = this.crosshair.y;
       if (x !== null && y !== null) {
         const lastPx = this.brushLastPx;
@@ -1000,6 +1100,8 @@ export class ChartPane {
       return;
     }
     if (this.shapeDrag) {
+      this.hoveredShapeId = null;
+      this.deleteBtnBounds = null;
       const sd = this.shapeDrag;
       const idx = this.shapes.findIndex((s) => s.id === sd.id);
       if (idx >= 0) {
@@ -1034,18 +1136,26 @@ export class ChartPane {
       return;
     }
     if (this.priceDrag) {
+      this.hoveredShapeId = null;
+      this.deleteBtnBounds = null;
       const dy = e.clientY - this.priceDrag.startY;
       this.priceZoom = Math.max(0.25, Math.min(20, this.priceDrag.startZoom * Math.exp(-dy * 0.006)));
       this.requestFitAndDraw();
       return;
     }
     if (this.pricePanDrag) {
+      this.hoveredShapeId = null;
+      this.deleteBtnBounds = null;
       const dy = e.clientY - this.pricePanDrag.startY;
       const lo = this.geom?.lo ?? 0, hi = this.geom?.hi ?? 1;
       const span = Math.max(1e-9, hi - lo);
       this.priceOffset = this.pricePanDrag.startOffset - dy * (span / this.canvas.height) * 0.5;
       this.requestFitAndDraw();
       return;
+    }
+    if (this.drawTool === "cross" && this.dragStartX !== null) {
+      this.hoveredShapeId = null;
+      this.deleteBtnBounds = null;
     }
     if (this.drawTool === "cross") {
       const hover = this.pickPositionShape(e);
@@ -1084,6 +1194,8 @@ export class ChartPane {
 
   private onPointerLeave = (): void => {
     this.crosshair = { x: null, y: null };
+    this.hoveredShapeId = null;
+    this.deleteBtnBounds = null;
     this.dragStartX = null;
     this.priceDrag = null;
     this.pricePanDrag = null;
