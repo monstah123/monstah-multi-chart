@@ -5,7 +5,7 @@
 //   interactive: wheel-zoom, drag-pan, resize-aware
 // ────────────────────────────────────────────────────────────────────
 
-import type { Candle, OscillatorMode, Timeframe } from "./types.js";
+import type { Candle, OscillatorMode, PaneKind, Timeframe } from "./types.js";
 import { MAX_BARS, YAHOO_POLL_MS } from "./constants.js";
 import { computeAll } from "./indicators.js";
 import { loadHistory, loadYahooRefresh, loadIbCandles, loadIbHistory, isBinanceSymbol, openBinanceKlineStream } from "./feed.js";
@@ -20,6 +20,8 @@ export interface PaneCallbacks {
   onRemoved: (id: number) => void;
   /** fired after a drawing is committed — let the host reset back to cursor mode */
   onToolDone?: (id: number) => void;
+  /** switch this pane between the local canvas and the TradingView widget */
+  onConvert?: (id: number, kind: PaneKind) => void;
 }
 
 const PRICE_AXIS_W = 90;
@@ -32,6 +34,7 @@ const TF_MS: Record<string, number> = {
 
 export class ChartPane {
   readonly id: number;
+  readonly kind = "native" as const;
   symbol: string;
   timeframe: Timeframe;
   oscMode: OscillatorMode = "rsi";
@@ -134,18 +137,19 @@ export class ChartPane {
       this.tfSelect.append(opt);
     }
     this.tfSelect.addEventListener("change", () => {
-      this.timeframe = this.tfSelect.value as Timeframe;
-      this.shapes = listShapes(this.symbol, this.timeframe);
-      this.pending = []; this.brushPts = null;
-      void this.load();
-      // keep the fullscreen badge in sync when the timeframe changes
-      this.updateFsBadge();
+      this.setTimeframe(this.tfSelect.value as Timeframe);
     });
 
     const oscBtn = document.createElement("button");
     oscBtn.textContent = "OSC";
     oscBtn.title = "cycle oscillator RSI → MACD → off";
     oscBtn.addEventListener("click", () => this.toggleOscillator());
+
+    const tvBtn = document.createElement("button");
+    tvBtn.textContent = "TV";
+    tvBtn.className = "kind-btn";
+    tvBtn.title = "switch this pane to the TradingView widget";
+    tvBtn.addEventListener("click", () => this.cb.onConvert?.(this.id, "tv"));
 
     this.priceEl = document.createElement("span");
     this.priceEl.className = "price";
@@ -168,7 +172,7 @@ export class ChartPane {
     rm.title = "remove pane";
     rm.addEventListener("click", () => this.remove());
 
-    this.headerEl.append(sym, this.tfSelect, oscBtn, this.priceEl, this.countdownEl, expand, rm);
+    this.headerEl.append(sym, this.tfSelect, oscBtn, tvBtn, this.priceEl, this.countdownEl, expand, rm);
     this.wrap.append(this.headerEl);
 
     this.canvas = document.createElement("canvas");
@@ -1415,6 +1419,18 @@ export class ChartPane {
     this.requestFitAndDraw();
   }
 
+  /** Switch this pane to another timeframe without recreating it. */
+  setTimeframe(tf: Timeframe): void {
+    if (tf === this.timeframe) return;
+    this.timeframe = tf;
+    this.tfSelect.value = tf;
+    this.shapes = listShapes(this.symbol, this.timeframe);
+    this.pending = []; this.brushPts = null;
+    void this.load();
+    // keep the fullscreen badge in sync when the timeframe changes
+    this.updateFsBadge();
+  }
+
   /** Switch this pane to another symbol without recreating it. */
   setSymbol(symbol: string): void {
     const s = symbol.trim().toUpperCase();
@@ -1489,13 +1505,18 @@ export class ChartPane {
     this.requestFitAndDraw();
   }
 
-  remove(): void {
+  /** Cleanup without notifying the host — used when converting pane kinds. */
+  dispose(): void {
     this.closeLiveFeed();
     this.stopYahooPoll();
     this.stopIbPoll();
     if (this.countdownTimer !== null) { window.clearInterval(this.countdownTimer); this.countdownTimer = null; }
     try { this.resizeObs?.disconnect(); } catch { /* noop */ }
     this.wrap.remove();
+  }
+
+  remove(): void {
+    this.dispose();
     this.cb.onRemoved(this.id);
   }
 }

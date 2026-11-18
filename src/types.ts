@@ -16,3 +16,6 @@ export interface PaneSpec {
 }
 
 export type OscillatorMode = "rsi" | "macd" | "off";
+
+/** Which engine renders a pane: the local canvas or the TradingView widget. */
+export type PaneKind = "native" | "tv";

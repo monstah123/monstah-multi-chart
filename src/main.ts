@@ -3,13 +3,17 @@
 // ────────────────────────────────────────────────────────────────────
 
 import { ChartPane } from "./pane.js";
+import { TVPane } from "./tvpane.js";
 import { DEFAULT_SYMBOLS, SYMBOL_GROUPS, TF, STORAGE_KEY_LAYOUT } from "./constants.js";
 import { PALETTE, WIDTHS, CLICK_COUNT } from "./drawtools.js";
 import type { ToolId } from "./drawtools.js";
 import { initWatchlist } from "./watchlist.js";
 import { initAlertsPanel } from "./alerts.js";
 import { initTheme, setTheme, themeId, THEMES } from "./theme.js";
-import type { Timeframe } from "./types.js";
+import type { PaneKind, Timeframe } from "./types.js";
+
+/** Both pane engines expose the same small surface used by the workspace. */
+type WorkspacePane = ChartPane | TVPane;
 
 type Layout = { cols: number; rows: number; label: string };
 const LAYOUTS: Record<string, Layout> = {
@@ -22,7 +26,7 @@ const LAYOUTS: Record<string, Layout> = {
 const LAYOUT_ORDER = ["1×1", "2×1", "1×2", "2×2", "3×2"];
 
 const state = {
-  panes: [] as ChartPane[],
+  panes: [] as WorkspacePane[],
   layoutKey: "2×2",
   lastTimeframe: "1m" as Timeframe,
   status: "" as string,
@@ -103,13 +107,7 @@ for (const t of TF) {
     for (const b of Array.from(timeframeRow.querySelectorAll(".btn"))) {
       b.setAttribute("aria-pressed", (b as HTMLElement).dataset.tf === t.key ? "true" : "false");
     }
-    for (const p of state.panes) {
-      p.timeframe = t.key;
-      (p as unknown as { tfSelect: HTMLSelectElement }).tfSelect.value = t.key;
-      void p.load();
-      // keep the fullscreen badge in sync when the timeframe changes
-      p.refreshFsBadge();
-    }
+    for (const p of state.panes) p.setTimeframe(t.key);
   });
   timeframeRow.append(btn);
 }
@@ -302,22 +300,64 @@ function chooseSymbol(symbol: string): void {
   addPane(s, state.lastTimeframe);
 }
 
-function addPane(symbol = symbolInput.value.trim().toUpperCase(), timeframe = state.lastTimeframe): void {
-  const s = symbol || "BTCUSDT";
-  const id = state.panes.length ? Math.max(...state.panes.map((p) => p.id)) + 1 : 1;
-  symbolInput.value = s;
-  const pane = new ChartPane(id, s, timeframe, {
+function handlePaneRemoved(removedId: number): void {
+  state.panes = state.panes.filter((p) => p.id !== removedId);
+  if (focusedPane && focusedPane.id === removedId) focusedPane = null;
+  if (state.panes.length === 0) setStatus("All panes removed. Press N or + Pane / + TV.");
+  applyLayout(state.layoutKey); // unhide any previously hidden panes
+  saveSession();
+}
+
+function makePane(id: number, symbol: string, timeframe: Timeframe, kind: PaneKind): WorkspacePane {
+  const cb = {
     onStatus: setStatus,
-    onRemoved: (removedId) => {
-      state.panes = state.panes.filter((p) => p.id !== removedId);
-      if (state.panes.length === 0) setStatus("All panes removed. Press N or + Pane.");
-      applyLayout(state.layoutKey); // unhide any previously hidden panes
-      saveSession();
-    },
+    onRemoved: handlePaneRemoved,
     // TradingView-style: after the drawing is placed, snap back to cursor mode
     // so the new shape is immediately draggable instead of staying sticky
     onToolDone: () => applyTool("cross"),
-  });
+    onConvert: (paneId: number, nextKind: PaneKind) => convertPane(paneId, nextKind),
+  };
+  return kind === "tv"
+    ? new TVPane(id, symbol, timeframe, cb)
+    : new ChartPane(id, symbol, timeframe, cb);
+}
+
+/** Swap a pane to the other engine in place, keeping id, symbol, timeframe,
+ *  price-pan mode and fullscreen state. Drawings/alerts on the native side
+ *  persist in localStorage, so switching back restores them. */
+function convertPane(id: number, kind: PaneKind): void {
+  const old = state.panes.find((p) => p.id === id);
+  if (!old || old.kind === kind) return;
+  const index = state.panes.indexOf(old);
+  const wasFullscreen = old.wrap.classList.contains("fullscreen");
+  const next = makePane(old.id, old.symbol, old.timeframe, kind);
+
+  old.wrap.replaceWith(next.wrap);
+  old.dispose();
+  state.panes[index] = next;
+  if (focusedPane === old) focusedPane = next;
+
+  next.setDrawTool(activeTool);
+  next.setStroke(currentColor(), currentWidth);
+  next.setPricePanMode(old.isPricePanMode());
+  void next.load();
+  applyLayout(state.layoutKey);
+  if (wasFullscreen) next.toggleFullscreen();
+  saveSession();
+  setStatus(kind === "tv"
+    ? `${next.symbol} switched to the TradingView chart (TradingView's feed)`
+    : `${next.symbol} switched to the built-in chart (local data feed)`);
+}
+
+function addPane(
+  symbol = symbolInput.value.trim().toUpperCase(),
+  timeframe = state.lastTimeframe,
+  kind: PaneKind = "native",
+): void {
+  const s = symbol || "BTCUSDT";
+  const id = state.panes.length ? Math.max(...state.panes.map((p) => p.id)) + 1 : 1;
+  symbolInput.value = s;
+  const pane = makePane(id, s, timeframe, kind);
   viewport.append(pane.wrap);
   state.panes.push(pane);
   pane.setDrawTool(activeTool);
@@ -342,7 +382,7 @@ const SAVED_KEY = "multi-chart:saved:v1";
 interface SavedSetup {
   name: string;
   layoutKey: string;
-  panes: { symbol: string; timeframe: Timeframe }[];
+  panes: { symbol: string; timeframe: Timeframe; kind?: PaneKind }[];
   savedAt: number;
 }
 function readSetups(): SavedSetup[] {
@@ -365,7 +405,7 @@ function loadSetup(s: SavedSetup): void {
   state.panes = [];
   state.layoutKey = LAYOUTS[s.layoutKey] ? s.layoutKey : "2×2";
   applyLayout(state.layoutKey);
-  for (const cfg of s.panes) addPane(cfg.symbol, cfg.timeframe);
+  for (const cfg of s.panes) addPane(cfg.symbol, cfg.timeframe, cfg.kind === "tv" ? "tv" : "native");
   setStatus(`Loaded “${s.name}” — ${s.panes.length} chart(s)`);
 }
 
@@ -382,7 +422,7 @@ saveBtn.addEventListener("click", () => {
   list.push({
     name,
     layoutKey: state.layoutKey,
-    panes: state.panes.map((p) => ({ symbol: p.symbol, timeframe: p.timeframe })),
+    panes: state.panes.map((p) => ({ symbol: p.symbol, timeframe: p.timeframe, kind: p.kind })),
     savedAt: Date.now(),
   });
   writeSetups(list);
@@ -459,13 +499,13 @@ importFile.addEventListener("change", () => {
   reader.onload = () => {
     try {
       const txt = String(reader.result);
-      const parsed = JSON.parse(txt) as { layoutKey?: string; panes?: { symbol: string; timeframe: Timeframe }[] };
+      const parsed = JSON.parse(txt) as { layoutKey?: string; panes?: { symbol: string; timeframe: Timeframe; kind?: string }[] };
       for (const p of [...state.panes]) p.remove();
       state.panes = [];
       if (parsed.layoutKey && LAYOUTS[parsed.layoutKey]) state.layoutKey = parsed.layoutKey;
       if (parsed.panes?.length) {
         applyLayout(state.layoutKey);
-        for (const cfg of parsed.panes) addPane(cfg.symbol, cfg.timeframe);
+        for (const cfg of parsed.panes) addPane(cfg.symbol, cfg.timeframe, cfg.kind === "tv" ? "tv" : "native");
       } else {
         addPane("BTCUSDT", "1m");
       }
@@ -483,7 +523,7 @@ function exportLayout(): void {
     version: 1,
     exportedAt: new Date().toISOString(),
     layoutKey: state.layoutKey,
-    panes: state.panes.map((p) => ({ symbol: p.symbol, timeframe: p.timeframe })),
+    panes: state.panes.map((p) => ({ symbol: p.symbol, timeframe: p.timeframe, kind: p.kind })),
   };
   const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
   const url = URL.createObjectURL(blob);
@@ -500,7 +540,7 @@ function saveSession(): void {
     const payload = {
       layoutKey: state.layoutKey,
       panMode: state.panes.length > 0 ? state.panes[0].isPricePanMode() : true,
-      panes: state.panes.map((p) => ({ symbol: p.symbol, timeframe: p.timeframe })),
+      panes: state.panes.map((p) => ({ symbol: p.symbol, timeframe: p.timeframe, kind: p.kind })),
     };
     localStorage.setItem(STORAGE_KEY_LAYOUT, JSON.stringify(payload));
   } catch { /* storage full or blocked — ignore */ }
@@ -510,10 +550,10 @@ function restoreSession(): boolean {
   try {
     const raw = localStorage.getItem(STORAGE_KEY_LAYOUT);
     if (!raw) return false;
-    const parsed = JSON.parse(raw) as { layoutKey?: string; panMode?: boolean; panes?: { symbol: string; timeframe: Timeframe }[] };
+    const parsed = JSON.parse(raw) as { layoutKey?: string; panMode?: boolean; panes?: { symbol: string; timeframe: Timeframe; kind?: string }[] };
     if (parsed.layoutKey && LAYOUTS[parsed.layoutKey]) applyLayout(parsed.layoutKey);
     if (Array.isArray(parsed.panes) && parsed.panes.length !== 0) {
-      for (const cfg of parsed.panes) addPane(cfg.symbol, cfg.timeframe);
+      for (const cfg of parsed.panes) addPane(cfg.symbol, cfg.timeframe, cfg.kind === "tv" ? "tv" : "native");
       const panMode = parsed.panMode ?? true;
       for (const p of state.panes) p.setPricePanMode(panMode);
       panToggleBtn.classList.toggle("active", panMode);
@@ -527,6 +567,16 @@ function restoreSession(): boolean {
 
 // ─── add-pane button + Enter on symbol input ──────────────────────────
 addPaneBtn.addEventListener("click", () => addPane());
+
+// An explicitly TV-backed pane, without converting an existing one.
+const addTvPaneBtn = document.createElement("button");
+addTvPaneBtn.id = "addTvPaneBtn";
+addTvPaneBtn.className = "btn";
+addTvPaneBtn.title = "add a pane powered by the official TradingView widget";
+addTvPaneBtn.textContent = "+ TV";
+addTvPaneBtn.addEventListener("click", () => addPane(undefined, undefined, "tv"));
+addPaneBtn.after(addTvPaneBtn);
+
 symbolInput.addEventListener("keydown", (e) => {
   if (e.key === "Enter") { e.preventDefault(); chooseSymbol(symbolInput.value || "BTCUSDT"); }
 });
@@ -600,7 +650,7 @@ const lineWidthRow = document.getElementById("lineWidthRow") as HTMLElement;
 const cursorInfo = document.getElementById("cursorInfo") as HTMLElement;
 const toolBtns = new Map<ToolId, HTMLButtonElement>();
 let activeTool: ToolId = "cross";
-let focusedPane: ChartPane | null = null;
+let focusedPane: WorkspacePane | null = null;
 
 function applyTool(tool: ToolId): void {
   activeTool = tool;
