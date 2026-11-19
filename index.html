@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>MONSTAH!!! Trading Terminal — multi-pane charts</title>
 <meta name="theme-color" content="#0b0e14">
 <meta name="description" content="Local multi-pane trading charts with optional TradingView panes">
@@ -18,27 +18,29 @@
 <body>
 <header class="topbar">
   <div class="brand">MONSTAH!!! Trading Terminal</div>
-  <div class="group">
+  <div class="group sym-group">
     <label class="label" for="symbolInput">Symbol</label>
     <input id="symbolInput" type="text" spellcheck="false" autocomplete="off" placeholder="BTCUSDT, AAPL, EURUSD…" value="BTCUSDT" list="symbolList">
     <datalist id="symbolList"></datalist>
   </div>
-  <div class="group">
+  <div class="group tf-group">
     <label class="label">Timeframe</label>
     <div id="timeframeRow" class="btn-row" role="toolbar"></div>
   </div>
-  <div class="group">
-    <label class="label">Layout</label>
-    <div class="btn-row" id="layoutRow"></div>
-  </div>
-  <div class="group spacer"></div>
-  <div class="group">
-    <button id="addPaneBtn" class="btn btn-accent" title="n — add pane">+ Pane</button>
-    <button id="watchlistBtn" class="btn" title="show / hide the symbol watchlist" aria-expanded="false">Watchlist</button>
-    <button id="alertsBtn" class="btn" title="show / hide price alerts">🔔 Alerts</button>
-    <button id="exportBtn" class="btn" title="Ctrl+S — export layout JSON">Export</button>
-    <button id="importBtn" class="btn">Import</button>
-    <input id="importFile" type="file" accept="application/json,.json" hidden>
+  <div class="tools-group">
+    <div class="group layout-group">
+      <label class="label">Layout</label>
+      <div class="btn-row" id="layoutRow"></div>
+    </div>
+    <div class="group spacer"></div>
+    <div class="group aux-group">
+      <button id="addPaneBtn" class="btn btn-accent" title="n — add pane">+ Pane</button>
+      <button id="watchlistBtn" class="btn" title="show / hide the symbol watchlist" aria-expanded="false">Watchlist</button>
+      <button id="alertsBtn" class="btn" title="show / hide price alerts">🔔 Alerts</button>
+      <button id="exportBtn" class="btn" title="Ctrl+S — export layout JSON">Export</button>
+      <button id="importBtn" class="btn">Import</button>
+      <input id="importFile" type="file" accept="application/json,.json" hidden>
+    </div>
   </div>
 </header>
 

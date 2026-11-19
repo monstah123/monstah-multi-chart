@@ -67,3 +67,21 @@ again** — iOS caches the old icon.
   as long as the phone has connectivity.
 - Tap **⤢** on a pane for full-screen; the 2×2 grid is tight on a phone.
 - Anyone on your tailnet can open the app. There is no authentication.
+
+## Phone layout (≤640px)
+
+The phone gets a different arrangement; the desktop layout is untouched.
+
+- **Charts stack in one column**, each roughly half a screen tall. The chart
+  canvas owns touch gestures, so scroll the page by dragging the pane headers,
+  the gaps between panes, or the status bar.
+- **Pinch** on a chart to zoom the time axis. One finger still pans, double-tap
+  resets the zoom.
+- **The top bar is three rows**: symbol, then timeframes, then one action strip
+  that scrolls sideways (fades at the right edge while there is more). Export /
+  Import are desktop-only.
+- **The drawing rail starts collapsed** on a phone (tap `»` to open it) and is
+  hidden entirely in a full-screen pane.
+- The watchlist and alerts open as full-width sheets, and newly added panes are
+  scrolled into view automatically.
+

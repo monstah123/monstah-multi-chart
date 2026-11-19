@@ -61,6 +61,9 @@ export class ChartPane {
   private crosshair: { x: number | null; y: number | null } = { x: null, y: null };
   private dragStartX: number | null = null;
   private dragStartScroll = 0;
+  /** live pointers on the canvas — two of them drive pinch-to-zoom */
+  private pointers = new Map<number, { x: number; y: number }>();
+  private pinch: { dist: number; bars: number } | null = null;
   // drawing layer state (ToolId "cross" = pass-through to pan/zoom)
   private drawTool: ToolId = "cross";
   private strokeColor = "#2962ff";
@@ -943,6 +946,21 @@ export class ChartPane {
   };
 
   private onPointerDown = (e: PointerEvent): void => {
+    this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (this.pointers.size === 2) {
+      // second finger: pinch-to-zoom on the time axis, like TradingView mobile
+      const [a, b] = [...this.pointers.values()];
+      this.pinch = { dist: Math.max(1, Math.hypot(a.x - b.x, a.y - b.y)), bars: this.visibleBars };
+      this.dragStartX = null;
+      this.priceDrag = null;
+      this.pricePanDrag = null;
+      if (this.shapeDrag) { saveShapes(this.symbol, this.timeframe, this.shapes); this.shapeDrag = null; }
+      this.pending = [];
+      this.brushPts = null;
+      this.brushLastPx = null;
+      e.preventDefault();
+      return;
+    }
     // Handle click on delete button first
     if (e.button === 0 && this.deleteBtnBounds) {
       const idx = this.shapes.findIndex(s => s.id === this.deleteBtnBounds!.shapeId);
@@ -1042,6 +1060,15 @@ export class ChartPane {
   }
 
   private onPointerMove = (e: PointerEvent): void => {
+    if (this.pointers.has(e.pointerId)) this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (this.pinch && this.pointers.size >= 2) {
+      const [a, b] = [...this.pointers.values()];
+      const dist = Math.max(1, Math.hypot(a.x - b.x, a.y - b.y));
+      this.visibleBars = Math.max(20, Math.min(600, Math.round(this.pinch.bars * (this.pinch.dist / dist))));
+      this.crosshair = { x: null, y: null };
+      this.requestFitAndDraw();
+      return;
+    }
     const rect = this.canvas.getBoundingClientRect();
     this.crosshair = { x: e.clientX - rect.left, y: e.clientY - rect.top };
 
@@ -1178,7 +1205,19 @@ export class ChartPane {
     this.requestFitAndDraw();
   };
 
-  private onPointerUp = (): void => {
+  private onPointerUp = (e: PointerEvent): void => {
+    this.pointers.delete(e.pointerId);
+    if (this.pinch) {
+      // wait for both fingers to lift before re-enabling single-finger panning
+      if (this.pointers.size < 2) {
+        this.pinch = null;
+        this.dragStartX = null;
+        this.priceDrag = null;
+        this.pricePanDrag = null;
+        this.requestFitAndDraw();
+      }
+      return;
+    }
     if (this.brushPts && this.brushPts.length > 1) {
       const pts = this.brushPts;
       this.shapes.push({ id: newShapeId(), kind: "brush", a: pts[0], pts, color: this.strokeColor, width: this.strokeWidth, createdAt: Date.now() });
@@ -1197,6 +1236,8 @@ export class ChartPane {
   };
 
   private onPointerLeave = (): void => {
+    this.pointers.clear();
+    this.pinch = null;
     this.crosshair = { x: null, y: null };
     this.hoveredShapeId = null;
     this.deleteBtnBounds = null;

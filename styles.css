@@ -25,6 +25,7 @@ body {
   display: flex;
   flex-direction: column;
   height: 100vh;
+  height: 100dvh;
   font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 }
 
@@ -94,8 +95,8 @@ button:hover { background: var(--btn-hover); }
 #sideBar {
   position: absolute;
   left: 6px;
-  top: 58px;
-  bottom: 34px;
+  top: calc(var(--topbar-h, 48px) + 10px);
+  bottom: calc(var(--statusbar-h, 24px) + 10px);
   width: 64px;
   background: var(--panel);
   border: 1px solid var(--border);
@@ -500,8 +501,8 @@ input[type="file"] { display: none; }
 #watchlist {
   position: absolute;
   right: 6px;
-  top: 58px;
-  bottom: 34px;
+  top: calc(var(--topbar-h, 48px) + 10px);
+  bottom: calc(var(--statusbar-h, 24px) + 10px);
   width: 224px;
   display: none;
   flex-direction: column;
@@ -608,7 +609,7 @@ body:has(.pane.fullscreen) #sideBar {
 #alertsPanel {
   position: absolute;
   right: 6px;
-  top: 58px;
+  top: calc(var(--topbar-h, 48px) + 10px);
   width: 232px;
   max-height: 320px;
   display: none;
@@ -751,7 +752,131 @@ body[data-theme="daylight"] #alertsPanel .alert-price { color: #b26b00; }
 body[data-theme="daylight"] .wl-row.open { background: rgba(41, 98, 255, 0.12); }
 .dd-panel .dd-item.active { background: rgba(41, 98, 255, 0.28); }
 
-/* fullscreen pane covers viewport; keep topbar (with ? Pan) above it */
+/* fullscreen pane covers viewport; keep topbar (with ↕ Pan) above it */
 header { z-index: 5500; }
-.pane.fullscreen { top: 48px; }
+.pane.fullscreen { top: var(--topbar-h, 48px); }
+
+/* transparent on desktop: phones turn this into one scrollable action strip */
+.tools-group { display: contents; }
+
+/* ────────────────────────────────────────────────────────────────────
+   PHONES (≤640px): one chart per row, compact chrome, touch targets.
+   The desktop layout is untouched — everything below is scoped.
+   ──────────────────────────────────────────────────────────────────── */
+@media (max-width: 640px) {
+  /* top bar: symbol + actions on row 1, timeframes and tools scroll sideways */
+  header.topbar {
+    padding: 5px 6px;
+    column-gap: 6px;
+    row-gap: 5px;
+  }
+  header.topbar .group { display: flex; align-items: center; gap: 4px; min-width: 0; }
+  header.topbar .spacer { display: none; }
+  header.topbar .group > .label { display: none; }
+  header .group.sym-group,
+  header .group.tf-group { flex: 1 0 100%; min-width: 0; }
+  /* one horizontally scrollable strip for layout + actions */
+  header .tools-group {
+    display: flex;
+    flex: 1 0 100%;
+    min-width: 0;
+    gap: 6px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+    padding-bottom: 1px;
+  }
+  header .tools-group::-webkit-scrollbar { display: none; }
+  header .tools-group > .group { flex: 0 0 auto; }
+  header .tools-group .aux-group { order: 1; }
+  header .tools-group .layout-group { order: 2; }
+  /* soft edge hint while more controls sit off-screen to the right */
+  header .tools-group.can-scroll {
+    -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 22px), transparent);
+    mask-image: linear-gradient(to right, #000 calc(100% - 22px), transparent);
+  }
+  #symbolInput { width: 100%; min-width: 0; font-size: 16px; padding: 5px 7px; }
+  #timeframeRow {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+    padding-bottom: 1px;
+  }
+  #timeframeRow::-webkit-scrollbar { display: none; }
+  header .btn { min-height: 30px; padding: 5px 9px; font-size: 12px; white-space: nowrap; }
+  #timeframeRow .btn { min-width: 36px; padding: 5px 7px; }
+  #addPaneBtn { margin-left: 0; }
+  #exportBtn, #importBtn { display: none; }
+
+  /* charts: single column, each tall enough to read, page scrolls */
+  main#viewport,
+  body.wl-open main#viewport {
+    grid-template-columns: 1fr !important;
+    grid-template-rows: none !important;
+    grid-auto-rows: clamp(250px, 56vh, 560px) !important;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+    padding: 6px 6px 6px 34px;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-y: contain;
+  }
+  body:not(.rail-collapsed) main#viewport { padding-left: 72px; }
+  /* every pane visible: the desktop layout slots don't apply on a phone */
+  .pane { display: flex !important; }
+  .pane.fullscreen { top: var(--topbar-h, 48px); }
+
+  /* pane header: keep symbol / timeframe / price, drop the nice-to-haves */
+  .pane-header { height: 30px; padding: 3px 6px; gap: 5px; }
+  .pane-header .symbol {
+    min-width: 0;
+    flex: 0 1 auto;
+    font-size: 11px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .pane-header select { max-width: 62px; padding: 1px 2px; font-size: 11px; }
+  .pane-header .countdown { display: none; }
+  .pane-header .price { font-size: 11px; }
+  .pane-header button { min-height: 24px; }
+  .pane-tv .tv-badge { display: none; }
+  .tv-status { top: 30px; }
+
+  /* drawing rail: fatter touch targets when it is open */
+  #sideBar { width: 60px; }
+  body.rail-collapsed #sideBar { width: 26px; }
+  #sideBar .tool-btn { width: 44px; height: 38px; }
+  #sideBar #railToggle { width: 28px; height: 22px; }
+
+  /* fly-out panels become full-width sheets instead of 224px strips */
+  #watchlist, #alertsPanel { left: 6px; right: 6px; width: auto; }
+  #watchlist { top: calc(var(--topbar-h, 48px) + 6px); bottom: calc(var(--statusbar-h, 24px) + 6px); }
+  #alertsPanel { max-height: 55vh; }
+  #watchlist .wl-add input { font-size: 16px; }
+  #watchlist .wl-row { padding: 7px 8px; font-size: 12px; }
+  #watchlist .wl-remove { opacity: 0.55; font-size: 14px; }
+  #alertsPanel .alert-row { padding: 7px 8px; font-size: 12px; }
+  #alertsPanel .alert-del { font-size: 15px; }
+  body.wl-open #alertsPanel { right: 6px; }
+
+  footer.statusbar {
+    height: calc(22px + env(safe-area-inset-bottom, 0px));
+    padding: 0 8px env(safe-area-inset-bottom, 0px) 8px;
+    font-size: 10px;
+    gap: 8px;
+  }
+  footer.statusbar > .sep,
+  footer.statusbar > span:not(#statusText) { display: none; }
+
+  /* fullscreen on a phone: the floating rail would clip the pane header */
+  body:has(.pane.fullscreen) #sideBar { display: none; }
+  .pane.fullscreen { left: 0; }
+
+  /* the inline `display:block` set by the pane needs !important here */
+  .fs-badge { display: none !important; }
+}
+
 

@@ -38,6 +38,24 @@ const symbolList = document.getElementById("symbolList") as HTMLDataListElement;
 const timeframeRow = document.getElementById("timeframeRow") as HTMLElement;
 const layoutRow = document.getElementById("layoutRow") as HTMLElement;
 const statusText = document.getElementById("statusText") as HTMLElement;
+
+// Absolutely-positioned rails (drawing toolbar, watchlist, alerts) need the real
+// topbar/footer heights: on a phone the topbar wraps to three rows.
+const topbarEl = document.querySelector("header.topbar") as HTMLElement | null;
+const statusbarEl = document.querySelector("footer.statusbar") as HTMLElement | null;
+function syncChromeHeights(): void {
+  const s = document.documentElement.style;
+  if (topbarEl) s.setProperty("--topbar-h", `${Math.round(topbarEl.getBoundingClientRect().height)}px`);
+  if (statusbarEl) s.setProperty("--statusbar-h", `${Math.round(statusbarEl.getBoundingClientRect().height)}px`);
+}
+syncChromeHeights();
+window.addEventListener("resize", syncChromeHeights);
+window.addEventListener("orientationchange", () => window.setTimeout(syncChromeHeights, 200));
+if (typeof ResizeObserver !== "undefined") {
+  const chromeRO = new ResizeObserver(syncChromeHeights);
+  if (topbarEl) chromeRO.observe(topbarEl);
+  if (statusbarEl) chromeRO.observe(statusbarEl);
+}
 const addPaneBtn = document.getElementById("addPaneBtn") as HTMLElement;
 const exportBtn = document.getElementById("exportBtn") as HTMLButtonElement;
 const importBtn = document.getElementById("importBtn") as HTMLButtonElement;
@@ -349,6 +367,8 @@ function convertPane(id: number, kind: PaneKind): void {
     : `${next.symbol} switched to the built-in chart (local data feed)`);
 }
 
+let booting = true;
+
 function addPane(
   symbol = symbolInput.value.trim().toUpperCase(),
   timeframe = state.lastTimeframe,
@@ -367,6 +387,10 @@ function addPane(
   pane.setPricePanMode(panMode);
   void pane.load();
   applyLayout(state.layoutKey);
+  // phones stack panes vertically: bring the new chart into view
+  if (!booting && window.matchMedia("(max-width: 640px)").matches) {
+    pane.wrap.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }
   const slots = LAYOUTS[state.layoutKey].cols * LAYOUTS[state.layoutKey].rows;
   if (!expandedHidden && state.panes.length > slots) {
     // never let a new pane disappear silently: reveal the overflow row
@@ -744,7 +768,13 @@ applyTool("cross");
 // drawing rail collapse — persisted, so the chart can use the full width
 const RAIL_KEY = "multi-chart:rail:v1";
 const railToggle = document.getElementById("railToggle") as HTMLButtonElement;
-try { if (localStorage.getItem(RAIL_KEY) === "1") document.body.classList.add("rail-collapsed"); } catch { /* ignore */ }
+// On a phone the rail costs 82px of a ~390px screen, so start collapsed there.
+// A stored preference always wins.
+try {
+  const saved = localStorage.getItem(RAIL_KEY);
+  const phone = window.matchMedia("(max-width: 640px)").matches;
+  if (saved === "1" || (saved === null && phone)) document.body.classList.add("rail-collapsed");
+} catch { /* ignore */ }
 function syncRailToggle(): void {
   const collapsed = document.body.classList.contains("rail-collapsed");
   railToggle.textContent = collapsed ? "»" : "«";
@@ -770,6 +800,17 @@ viewport.addEventListener("pointerdown", (e) => {
   const id = Number(paneEl.dataset.paneId);
   focusedPane = state.panes.find((p) => p.id === id) ?? null;
 }, true);
+
+// ─── phone action strip: fade the edge while there is more to scroll ──
+const toolsGroup = document.querySelector("header .tools-group") as HTMLElement | null;
+function syncToolsFade(): void {
+  if (!toolsGroup) return;
+  const more = toolsGroup.scrollWidth - toolsGroup.clientWidth - toolsGroup.scrollLeft > 2;
+  toolsGroup.classList.toggle("can-scroll", more);
+}
+toolsGroup?.addEventListener("scroll", syncToolsFade, { passive: true });
+window.addEventListener("resize", syncToolsFade);
+syncToolsFade();
 
 // ─── watchlist panel ──────────────────────────────────────────────────
 const watchlistBtn = document.getElementById("watchlistBtn") as HTMLButtonElement;
@@ -845,6 +886,7 @@ if (!restored) {
   addPane("AAPL", "1D");
   addPane("AAPL", "1m"); // intraday slot defaults to tech — hidden if 1D chart chosen instead
   }
+booting = false;
 // Initialize pan toggle button state after session restore — always on
 for (const p of state.panes) p.setPricePanMode(true);
 panToggleBtn.classList.toggle("active", true);
