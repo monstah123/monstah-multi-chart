@@ -7,6 +7,7 @@
   "scripts": {
     "build": "tsc",
     "serve": "node bin/serve.js",
+    "serve:lan": "node bin/serve.js --lan",
     "ib": "node bin/ib-bridge.js",
     "typecheck": "tsc --noEmit"
   },

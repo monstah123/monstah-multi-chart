@@ -26,6 +26,10 @@ import { fileURLToPath } from "node:url";
 const BIN_DIR = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(BIN_DIR, "..");
 const PORT = Number(process.env.PORT || 8080);
+// Default stays loopback. `--lan` (or HOST=0.0.0.0) exposes the app to the
+// LAN / Tailscale interface; there is no authentication, so opt in explicitly.
+const LAN = process.argv.includes("--lan");
+const HOST = process.env.HOST || (LAN ? "0.0.0.0" : "127.0.0.1");
 const IB_BRIDGE = `http://127.0.0.1:${Number(process.env.IB_BRIDGE_PORT || 8099)}`;
 
 const MIME = {
@@ -37,6 +41,7 @@ const MIME = {
   ".svg":  "image/svg+xml",
   ".png":  "image/png",
   ".ico":  "image/x-icon",
+  ".webmanifest": "application/manifest+json; charset=utf-8",
 };
 
 function safeJoin(root, rel) {
@@ -262,7 +267,8 @@ const server = http.createServer((req, res) => {
   })();
 });
 
-server.listen(PORT, "127.0.0.1", () => {
+server.listen(PORT, HOST, () => {
   console.log(`Multi-Chart local: http://localhost:${PORT}`);
+  if (HOST === "0.0.0.0") console.log(`LAN / Tailscale:   http://<this-machine-ip>:${PORT}  (no auth — trusted networks only)`);
   console.log(`Data: Binance REST/WS (realtime crypto) · IBKR Pro via bridge for stocks/FX (Yahoo spark fallback) · Yahoo spark for indices/commodities`);
 });
