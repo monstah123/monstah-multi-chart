@@ -24,6 +24,8 @@ export interface PaneCallbacks {
   onConvert?: (id: number, kind: PaneKind) => void;
   /** Matrix colors changed on a pane — let the host sync its global toggle */
   onMatrixChanged?: (id: number) => void;
+  /** toggle the global watchlist panel */
+  onToggleWatchlist?: () => void;
 }
 
 const PRICE_AXIS_W = 90;
@@ -51,6 +53,7 @@ export class ChartPane {
   private tfSelect!: HTMLSelectElement;
   private expandBtn!: HTMLButtonElement;
   private matrixBtn!: HTMLButtonElement;
+  private wlBtn!: HTMLButtonElement;
   private symbolEl!: HTMLElement;
   private fsBadge: HTMLElement | null = null;
   private fullscreen = false;
@@ -149,6 +152,15 @@ export class ChartPane {
       this.setTimeframe(this.tfSelect.value as Timeframe);
     });
 
+    // Watchlist toggle in the pane header — always reachable, even in fullscreen
+    const wlBtn = document.createElement("button");
+    wlBtn.textContent = "WL";
+    wlBtn.className = "kind-btn";
+    wlBtn.title = "toggle watchlist panel";
+    wlBtn.setAttribute("aria-label", "toggle watchlist");
+    wlBtn.addEventListener("click", () => this.cb.onToggleWatchlist?.());
+    this.wlBtn = wlBtn;
+
     const oscBtn = document.createElement("button");
     oscBtn.textContent = "OSC";
     oscBtn.title = "cycle oscillator RSI → MACD → off";
@@ -190,7 +202,7 @@ export class ChartPane {
     rm.title = "remove pane";
     rm.addEventListener("click", () => this.remove());
 
-    this.headerEl.append(sym, this.tfSelect, oscBtn, tvBtn, matrixBtn, this.priceEl, this.countdownEl, expand, rm);
+    this.headerEl.append(sym, this.tfSelect, this.wlBtn, oscBtn, tvBtn, matrixBtn, this.priceEl, this.countdownEl, expand, rm);
     this.wrap.append(this.headerEl);
 
     this.canvas = document.createElement("canvas");

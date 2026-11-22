@@ -69,6 +69,13 @@ matrixBtn.textContent = "M";
 matrixBtn.title = "toggle Matrix neon-green colors on all native panes";
 matrixBtn.setAttribute("aria-label", "toggle Matrix colors on all native panes");
 matrixBtn.setAttribute("aria-pressed", "false");
+
+// Watchlist is toggled from pane headers (WL button) by clicking the topbar
+// button programmatically — reuses the existing handler, no API changes.
+function toggleWatchlist(): void {
+  const btn = document.getElementById("watchlistBtn") as HTMLButtonElement | null;
+  btn?.click();
+}
 const panToggleBtn = document.createElement("button");
 panToggleBtn.id = "panToggleBtn";
 panToggleBtn.className = "btn";
@@ -411,6 +418,7 @@ function makePane(id: number, symbol: string, timeframe: Timeframe, kind: PaneKi
     onToolDone: () => applyTool("cross"),
     onConvert: (paneId: number, nextKind: PaneKind) => convertPane(paneId, nextKind),
     onMatrixChanged: () => syncMatrixBtn(),
+    onToggleWatchlist: () => toggleWatchlist(),
   };
   return kind === "tv"
     ? new TVPane(id, symbol, timeframe, cb)
