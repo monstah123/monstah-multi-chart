@@ -719,6 +719,22 @@ addTvPaneBtn.textContent = "+ TV";
 addTvPaneBtn.addEventListener("click", () => addPane(undefined, undefined, "tv"));
 addPaneBtn.after(addTvPaneBtn);
 
+// Clear all charts — a one-click way back to an empty grid after adding panes.
+const clearPanesBtn = document.getElementById("clearPanesBtn") as HTMLButtonElement | null;
+function clearAllPanes(): void {
+  const count = state.panes.length;
+  if (count === 0) { setStatus("No charts to clear."); return; }
+  for (const p of state.panes) p.dispose();
+  state.panes = [];
+  focusedPane = null;
+  expandedHidden = false;
+  applyLayout(state.layoutKey);
+  saveSession();
+  syncMatrixBtn();
+  setStatus(`Cleared ${count} chart(s). Press N or + Pane to add one.`);
+}
+clearPanesBtn?.addEventListener("click", clearAllPanes);
+
 symbolInput.addEventListener("keydown", (e) => {
   if (e.key === "Enter") { e.preventDefault(); chooseSymbol(symbolInput.value || "BTCUSDT"); }
 });

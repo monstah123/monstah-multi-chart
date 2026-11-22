@@ -29,6 +29,11 @@ export interface PaneCallbacks {
 }
 
 const PRICE_AXIS_W = 90;
+const DEFAULT_VISIBLE_BARS = 160;
+// IB often returns only the current session's bars right after a weekend
+// reopen (e.g. 19 x 1m bars). The old floor of 20 meant wheel-zoom could never
+// make those charts smaller, and drag-pan had maxOffset=0 — both looked broken.
+const MIN_VISIBLE_BARS = 5;
 const DEFAULT_FUTURE_BARS = 3;   // right margin so the newest candle is never clipped
 const MAX_FUTURE_BARS = 120;     // how far you can scroll past the newest candle
 const FONT_DIM = "10px -apple-system, 'Segoe UI', Roboto, sans-serif";
@@ -62,7 +67,9 @@ export class ChartPane {
 
   private candles: Candle[] = [];
   private indicator: ReturnType<typeof computeAll> | null = null;
-  private visibleBars = 160;
+  private visibleBars = DEFAULT_VISIBLE_BARS;
+  /** zoom to apply when (re)loading a symbol/timeframe — adapted to bar count */
+  private defaultVisibleBars = DEFAULT_VISIBLE_BARS;
   private offsetBars = 0;
   /** empty bars kept to the right of the newest candle (TradingView right margin) */
   private futureBars = DEFAULT_FUTURE_BARS;
@@ -270,6 +277,11 @@ export class ChartPane {
     try {
       const r = await loadHistory(this.symbol, this.timeframe);
       this.candles = r.candles;
+      // Fit the initial zoom to what the feed actually returned. A fresh IB FX
+      // session can contain fewer than 20 bars; with the old fixed 160-bar
+      // default, wheel and drag had nothing to change and looked dead.
+      this.defaultVisibleBars = Math.max(MIN_VISIBLE_BARS, Math.min(DEFAULT_VISIBLE_BARS, this.candles.length));
+      this.visibleBars = this.defaultVisibleBars;
       this.fxLiveOnly = false;
       this.flatBase = null;
       this.fxBuckets.clear();
@@ -548,7 +560,8 @@ export class ChartPane {
     const v = Math.max(0, Math.min(maxOffset, Math.round(Number(this.hscrollInput.value) || 0)));
     // the slider counts from the oldest bar: dragging right → newer bars
     this.offsetBars = maxOffset - v;
-    this.futureBars = 0;
+    // keep the usual right margin so the newest candle isn't clipped at the axis
+    this.futureBars = DEFAULT_FUTURE_BARS;
     this.draw();
   }
 
@@ -991,7 +1004,7 @@ export class ChartPane {
       return;
     }
     const factor = e.deltaY > 0 ? 1 / 1.1 : 1.1;
-    this.visibleBars = Math.max(20, Math.min(600, Math.round(this.visibleBars * factor)));
+    this.visibleBars = Math.max(MIN_VISIBLE_BARS, Math.min(600, Math.round(this.visibleBars * factor)));
     this.requestFitAndDraw();
   };
 
@@ -1114,7 +1127,7 @@ export class ChartPane {
     if (this.pinch && this.pointers.size >= 2) {
       const [a, b] = [...this.pointers.values()];
       const dist = Math.max(1, Math.hypot(a.x - b.x, a.y - b.y));
-      this.visibleBars = Math.max(20, Math.min(600, Math.round(this.pinch.bars * (this.pinch.dist / dist))));
+      this.visibleBars = Math.max(MIN_VISIBLE_BARS, Math.min(600, Math.round(this.pinch.bars * (this.pinch.dist / dist))));
       this.crosshair = { x: null, y: null };
       this.requestFitAndDraw();
       return;
@@ -1545,7 +1558,7 @@ export class ChartPane {
   }
 
   onDoubleClick = (): void => {
-    this.visibleBars = 160;
+    this.visibleBars = this.defaultVisibleBars;
     this.offsetBars = 0;
     this.futureBars = DEFAULT_FUTURE_BARS;
     this.priceZoom = 1;

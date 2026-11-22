@@ -47,6 +47,7 @@ const state = {
   ib: null,
   quotes: new Map(),      // symbol → { price, bid, ask, mid, t }
   liveBars: new Map(),    // symbol → current 1m bar
+  subscribed: new Set(),  // every symbol ever requested — survives disconnects
   historical: new Map(),  // reqId → { symbol, tf, resolve, reject, timer, candles }
   historyCache: new Map(),// "SYM|tf" → { at, candles }
 };
@@ -86,7 +87,7 @@ const isFx = (symbol) => /^[A-Z]{6}=X$/.test(String(symbol).toUpperCase());
 
 // ─── timeframe mapping ──────────────────────────────────────────────
 const TF_MAP = {
-  "1m": { bar: BarSizeSetting.MINUTES_ONE, duration: "1 D" },
+  "1m": { bar: BarSizeSetting.MINUTES_ONE, duration: "5 D" },
   "5m": { bar: BarSizeSetting.MINUTES_FIVE, duration: "2 D" },
   "15m": { bar: BarSizeSetting.MINUTES_FIFTEEN, duration: "5 D" },
   "30m": { bar: BarSizeSetting.MINUTES_THIRTY, duration: "10 D" },
@@ -110,13 +111,20 @@ function createClient(port) {
     state.lastError = null;
     log(`connected → ${HOST}:${port} (${modeName(port)}) clientId=${CLIENT_ID}`);
     try { ib.reqMarketDataType(DATA_TYPE); } catch { /* older gateway */ }
-    for (const sym of state.quotes.keys()) subscribeMarketData(ib, sym);
+    // Re-subscribe after every reconnect. Ticker ids are socket-local, so the
+    // maps were cleared in the disconnected handler below.
+    for (const sym of state.subscribed) subscribeMarketData(ib, sym);
   });
 
   ib.on(EventName.disconnected, () => {
     if (ib !== state.ib) return;
     state.connected = false;
     state.connecting = false;
+    // Old ticker ids are dead with the old socket. Clearing them is what makes
+    // the reconnect handler actually issue fresh reqMktData calls (otherwise
+    // subscribeMarketData sees the symbol in symbolTickers and does nothing).
+    tickerIds.clear();
+    symbolTickers.clear();
     logThrottled("disconnected — retrying");
   });
 
@@ -181,6 +189,7 @@ function finishHistorical(reqId, err) {
 
 // ─── market data ────────────────────────────────────────────────────
 function subscribeMarketData(ib, symbol) {
+  state.subscribed.add(symbol);
   if (symbolTickers.has(symbol)) return;
   const contract = contractFor(symbol);
   if (!contract) return;
