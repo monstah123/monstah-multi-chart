@@ -201,6 +201,21 @@ main#viewport {
 .pane.rows-1 { grid-row: 1; }
 .pane.rows-2 { grid-row: span 2; }
 
+/* Six charts (3×2): tighter matting and compact pane headers so the
+   fullscreen button at the top right stays visible on smaller screens. */
+main#viewport[data-cols="3"] { gap: 3px; padding: 5px 5px 5px 70px; }
+body.rail-collapsed main#viewport[data-cols="3"] { padding-left: 34px; }
+main#viewport[data-cols="3"] .pane-header { gap: 3px; padding: 3px 4px; }
+main#viewport[data-cols="3"] .pane-header .symbol { min-width: 66px; }
+main#viewport[data-cols="3"] .pane-header select { max-width: 56px; }
+/* Watchlist open leaves very narrow panes — keep the fullscreen and close
+   buttons, drop only the optional toggles/countdown. */
+body.wl-open main#viewport[data-cols="3"] .pane-header > :nth-child(3),
+body.wl-open main#viewport[data-cols="3"] .pane-header > :nth-child(4),
+body.wl-open main#viewport[data-cols="3"] .pane-header > :nth-child(5),
+body.wl-open main#viewport[data-cols="3"] .pane-header > :nth-child(6),
+body.wl-open main#viewport[data-cols="3"] .countdown { display: none; }
+
 /* ── pane ── */
 .pane {
   position: relative;

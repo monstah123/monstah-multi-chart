@@ -362,6 +362,9 @@ layoutRow.prepend(hiddenToggle);
 function applyLayout(key: string): void {
   state.layoutKey = key;
   const { cols, rows } = LAYOUTS[key];
+  // lets CSS tighten matting/header spacing in dense grids (6 charts)
+  viewport.dataset.cols = String(cols);
+  viewport.dataset.rows = String(rows);
   viewport.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
   viewport.style.gridTemplateRows = `repeat(${rows}, 1fr)`;
   viewport.style.gridAutoRows = "1fr";
