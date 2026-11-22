@@ -910,3 +910,36 @@ header { z-index: 5500; }
 }
 
 
+
+/* -- Matrix mode: watchlist follows the neon-green palette ------------- */
+body.matrix-mode #watchlist {
+  background: #020a04;
+  border-color: rgba(0, 255, 102, 0.45);
+  box-shadow: 0 0 12px rgba(0, 255, 102, 0.22);
+}
+body.matrix-mode #watchlist .wl-head {
+  color: #00ff66;
+  border-bottom-color: rgba(0, 255, 102, 0.30);
+}
+body.matrix-mode #watchlist .wl-group { color: rgba(0, 255, 102, 0.55); }
+body.matrix-mode #watchlist .wl-row { color: #b6ffce; }
+body.matrix-mode #watchlist .wl-row:hover { background: rgba(0, 255, 102, 0.08); }
+body.matrix-mode #watchlist .wl-row.open { background: rgba(0, 255, 102, 0.14); }
+body.matrix-mode #watchlist .wl-sym { color: #b6ffce; }
+body.matrix-mode #watchlist .wl-price { color: #00ff66; }
+body.matrix-mode #watchlist .wl-chg.up { color: #00ff66; }
+body.matrix-mode #watchlist .wl-chg.down { color: #00b34a; }
+body.matrix-mode #watchlist button {
+  background: rgba(0, 255, 102, 0.08);
+  border-color: rgba(0, 255, 102, 0.35);
+  color: #00ff66;
+}
+body.matrix-mode #watchlist button:hover { background: rgba(0, 255, 102, 0.18); }
+body.matrix-mode #watchlist .wl-remove:hover { color: #ff5f5f; }
+body.matrix-mode #watchlist .wl-add { border-top-color: rgba(0, 255, 102, 0.30); }
+body.matrix-mode #watchlist .wl-add input {
+  background: #020a04;
+  color: #b6ffce;
+  border-color: rgba(0, 255, 102, 0.35);
+}
+body.matrix-mode #watchlist .wl-add input:focus { outline: 1px solid #00ff66; }

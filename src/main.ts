@@ -60,7 +60,15 @@ const addPaneBtn = document.getElementById("addPaneBtn") as HTMLElement;
 const exportBtn = document.getElementById("exportBtn") as HTMLButtonElement;
 const importBtn = document.getElementById("importBtn") as HTMLButtonElement;
 const importFile = document.getElementById("importFile") as HTMLInputElement;
-const matrixBtn = document.getElementById("matrixBtn") as HTMLButtonElement;
+// Global Matrix toggle lives with the other appearance controls (next to the
+// theme picker) so the right-hand action group stays exactly as it was.
+const matrixBtn = document.createElement("button");
+matrixBtn.id = "matrixBtn";
+matrixBtn.className = "btn sm";
+matrixBtn.textContent = "M";
+matrixBtn.title = "toggle Matrix neon-green colors on all native panes";
+matrixBtn.setAttribute("aria-label", "toggle Matrix colors on all native panes");
+matrixBtn.setAttribute("aria-pressed", "false");
 const panToggleBtn = document.createElement("button");
 panToggleBtn.id = "panToggleBtn";
 panToggleBtn.className = "btn";
@@ -288,7 +296,7 @@ initTheme();
     }
   });
   themeDD.addEventListener("click", () => markThemeChoice(), true);
-  layoutRow.append(themeDD);
+  layoutRow.append(themeDD, matrixBtn);
   markThemeChoice();
 }
 
@@ -304,11 +312,14 @@ function nativePanes(): ChartPane[] {
 function syncMatrixBtn(): void {
   const natives = nativePanes();
   const on = natives.length > 0 && natives.every((p) => p.matrixMode);
+  const anyOn = natives.some((p) => p.matrixMode);
   matrixBtn.classList.toggle("matrix-on", on);
   matrixBtn.setAttribute("aria-pressed", on ? "true" : "false");
   matrixBtn.title = on
     ? "Matrix colors ON for all native panes — click to turn off"
     : "toggle Matrix neon-green colors on all native panes";
+  // the watchlist follows Matrix mode whenever at least one chart is green
+  document.body.classList.toggle("matrix-mode", anyOn);
 }
 
 matrixBtn.addEventListener("click", () => {
