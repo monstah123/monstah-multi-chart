@@ -10,7 +10,7 @@ import { MAX_BARS, YAHOO_POLL_MS } from "./constants.js";
 import { computeAll } from "./indicators.js";
 import { loadHistory, loadYahooRefresh, loadIbCandles, loadIbHistory, isBinanceSymbol, openBinanceKlineStream } from "./feed.js";
 import { listShapes, saveShapes, hitTest, drawShape, newShapeId, CLICK_COUNT, DRAG_TOOLS } from "./drawtools.js";
-import { palette } from "./theme.js";
+import { palette, matrixPalette, isMatrixSymbol, setMatrixSymbol } from "./theme.js";
 import type { Shape, ToolId, Anchor, DrawCtx } from "./drawtools.js";
 import { listAlerts, addAlert, removeAlert, checkPrice, ensureNotificationPermission } from "./alerts.js";
 import type { PriceAlert } from "./alerts.js";
@@ -22,6 +22,8 @@ export interface PaneCallbacks {
   onToolDone?: (id: number) => void;
   /** switch this pane between the local canvas and the TradingView widget */
   onConvert?: (id: number, kind: PaneKind) => void;
+  /** Matrix colors changed on a pane — let the host sync its global toggle */
+  onMatrixChanged?: (id: number) => void;
 }
 
 const PRICE_AXIS_W = 90;
@@ -38,6 +40,8 @@ export class ChartPane {
   symbol: string;
   timeframe: Timeframe;
   oscMode: OscillatorMode = "rsi";
+  /** render this pane with the neon-green Matrix palette (same native data) */
+  matrixMode = false;
 
   wrap!: HTMLElement;
   headerEl!: HTMLElement;
@@ -46,6 +50,7 @@ export class ChartPane {
   private ctx!: CanvasRenderingContext2D;
   private tfSelect!: HTMLSelectElement;
   private expandBtn!: HTMLButtonElement;
+  private matrixBtn!: HTMLButtonElement;
   private symbolEl!: HTMLElement;
   private fsBadge: HTMLElement | null = null;
   private fullscreen = false;
@@ -112,6 +117,7 @@ export class ChartPane {
 
   constructor(id: number, symbol: string, timeframe: Timeframe, cb: PaneCallbacks) {
     this.id = id; this.symbol = symbol; this.timeframe = timeframe; this.cb = cb;
+    this.matrixMode = isMatrixSymbol(symbol);
     this.shapes = listShapes(symbol, timeframe);
     this.buildDom();
     this.requestFitAndDraw();
@@ -154,6 +160,15 @@ export class ChartPane {
     tvBtn.title = "switch this pane to the TradingView widget";
     tvBtn.addEventListener("click", () => this.cb.onConvert?.(this.id, "tv"));
 
+    const matrixBtn = document.createElement("button");
+    matrixBtn.textContent = "M";
+    matrixBtn.className = "kind-btn";
+    matrixBtn.title = "toggle Matrix neon-green colors (same native data)";
+    matrixBtn.setAttribute("aria-pressed", "false");
+    matrixBtn.addEventListener("click", () => this.toggleMatrix());
+    this.matrixBtn = matrixBtn;
+    this.syncMatrixBtn();
+
     this.priceEl = document.createElement("span");
     this.priceEl.className = "price";
     this.priceEl.textContent = "—";
@@ -175,7 +190,7 @@ export class ChartPane {
     rm.title = "remove pane";
     rm.addEventListener("click", () => this.remove());
 
-    this.headerEl.append(sym, this.tfSelect, oscBtn, tvBtn, this.priceEl, this.countdownEl, expand, rm);
+    this.headerEl.append(sym, this.tfSelect, oscBtn, tvBtn, matrixBtn, this.priceEl, this.countdownEl, expand, rm);
     this.wrap.append(this.headerEl);
 
     this.canvas = document.createElement("canvas");
@@ -550,6 +565,29 @@ export class ChartPane {
     this.draw();
   }
 
+  /** Toggle the neon-green Matrix palette for this pane only. Data feed,
+   *  symbol, timeframe and every other behaviour stay exactly the same. */
+  toggleMatrix(): void {
+    this.setMatrix(!this.matrixMode);
+  }
+
+  /** Force Matrix colors on/off (used by the toolbar's "all panes" toggle).
+   *  The choice is remembered per symbol for the next reload. */
+  setMatrix(on: boolean): void {
+    this.matrixMode = on;
+    setMatrixSymbol(this.symbol, on);
+    this.syncMatrixBtn();
+    this.draw();
+    this.cb.onMatrixChanged?.(this.id);
+  }
+
+  private syncMatrixBtn(): void {
+    const b = this.matrixBtn;
+    if (!b) return;
+    b.classList.toggle("matrix-on", this.matrixMode);
+    b.setAttribute("aria-pressed", this.matrixMode ? "true" : "false");
+  }
+
   // ─── rendering ─────────────────────────────────────────────────────
   private visibleSlice(): { slice: Candle[]; offset: number } {
     const total = this.candles.length;
@@ -561,7 +599,7 @@ export class ChartPane {
 
   private draw(): void {
     const ctx = this.ctx;
-    const P = palette();
+    const P = this.matrixMode ? matrixPalette() : palette();
     this.syncHscroll();
     const { w: W, h: H } = this.canvasBox();
     ctx.fillStyle = P.panel;
@@ -1478,6 +1516,9 @@ export class ChartPane {
     if (!s || s === this.symbol) return;
     this.symbol = s;
     this.symbolEl.textContent = s;
+    this.matrixMode = isMatrixSymbol(s);
+    this.syncMatrixBtn();
+    this.cb.onMatrixChanged?.(this.id);
     this.updateFsBadge();
     this.shapes = listShapes(s, this.timeframe);
     this.pending = []; this.brushPts = null;

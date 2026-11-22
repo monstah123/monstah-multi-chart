@@ -18,8 +18,8 @@ type WorkspacePane = ChartPane | TVPane;
 type Layout = { cols: number; rows: number; label: string };
 const LAYOUTS: Record<string, Layout> = {
   "1×1": { cols: 1, rows: 1, label: "1 chart" },
-  "2×1": { cols: 2, rows: 1, label: "2 charts side-by-side" },
-  "1×2": { cols: 1, rows: 2, label: "2 charts stacked" },
+  "2×1": { cols: 1, rows: 2, label: "2 charts stacked" },
+  "1×2": { cols: 2, rows: 1, label: "2 charts side-by-side" },
   "2×2": { cols: 2, rows: 2, label: "4 charts (2×2)" },
   "3×2": { cols: 3, rows: 2, label: "6 charts (3×2)" },
 };
@@ -60,6 +60,7 @@ const addPaneBtn = document.getElementById("addPaneBtn") as HTMLElement;
 const exportBtn = document.getElementById("exportBtn") as HTMLButtonElement;
 const importBtn = document.getElementById("importBtn") as HTMLButtonElement;
 const importFile = document.getElementById("importFile") as HTMLInputElement;
+const matrixBtn = document.getElementById("matrixBtn") as HTMLButtonElement;
 const panToggleBtn = document.createElement("button");
 panToggleBtn.id = "panToggleBtn";
 panToggleBtn.className = "btn";
@@ -171,8 +172,28 @@ function glyph(cols: number, rows: number, active: Record<string, boolean>): HTM
   return g;
 }
 
+// Create a glyph for the current layout to show on the dropdown toggle
+function currentLayoutGlyph(): HTMLElement {
+  const { cols, rows } = LAYOUTS[state.layoutKey];
+  let glyphActive: Record<string, boolean> = {};
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      glyphActive[`${r},${c}`] = true;
+    }
+  }
+  return glyph(cols, rows, glyphActive);
+}
+
 {
-  const layoutDD = makeDropdown("Charts ▾", "Choose how many charts to show", (panel) => {
+  // Create the dropdown toggle with a glyph that updates
+  const toggleLabel = document.createElement("span");
+  toggleLabel.className = "layout-toggle-label";
+  toggleLabel.style.display = "inline-flex";
+  toggleLabel.style.alignItems = "center";
+  toggleLabel.style.gap = "6px";
+  toggleLabel.append(currentLayoutGlyph(), document.createTextNode("Charts ▾"));
+
+  const layoutDD = makeDropdown("", "Choose how many charts to show", (panel) => {
     for (const key of LAYOUT_ORDER) {
       const L = LAYOUTS[key];
       const item = document.createElement("button");
@@ -180,24 +201,36 @@ function glyph(cols: number, rows: number, active: Record<string, boolean>): HTM
       item.dataset.layout = key;
       let glyphActive: Record<string, boolean> = {};
       if (key === "1×1") glyphActive = { "0,0": true };
-      else if (key === "2×1") glyphActive = { "0,0": true, "0,1": true };
-      else if (key === "1×2") glyphActive = { "0,0": true, "1,0": true };
+      else if (key === "2×1") glyphActive = { "0,0": true, "1,0": true }; // stacked (vertical)
+      else if (key === "1×2") glyphActive = { "0,0": true, "0,1": true }; // side-by-side (horizontal)
       else if (key === "2×2") glyphActive = { "0,0": true, "0,1": true, "1,0": true, "1,1": true };
       else if (key === "3×2") {
         for (let r = 0; r < 2; r++) for (let c = 0; c < 3; c++) glyphActive[`${r},${c}`] = true;
       }
       const g = glyph(L.cols, L.rows, glyphActive);
       const label = document.createElement("span");
-      label.textContent = L.label;
+      // Clearer labels showing orientation
+      const orientationLabel = key === "1×2" ? " (horizontal)" : key === "2×1" ? " (vertical)" : "";
+      label.textContent = L.label + orientationLabel;
       item.append(g, label);
       item.addEventListener("click", (e) => {
         e.stopPropagation();
+        // User explicitly chose a layout — reset expandedHidden so auto-layout works again
+        expandedHidden = false;
+        try { localStorage.setItem(VIS_KEY, "0"); } catch { /* ignore */ }
         applyLayout(key);
+        // Update the toggle button glyph
+        toggleLabel.innerHTML = "";
+        toggleLabel.append(currentLayoutGlyph(), document.createTextNode("Charts ▾"));
         closeOtherDropdowns(null);
       });
       panel.append(item);
     }
   });
+  // Replace the toggle button's content with our custom label
+  const toggleBtn = layoutDD.querySelector(".dd-toggle") as HTMLButtonElement;
+  toggleBtn.innerHTML = "";
+  toggleBtn.append(toggleLabel);
   layoutRow.append(layoutDD);
 }
 
@@ -258,6 +291,37 @@ initTheme();
   layoutRow.append(themeDD);
   markThemeChoice();
 }
+
+// ─── Matrix (neon-green) — global toggle ──────────────────────────────
+// Turns the Matrix palette on/off across every native pane at once. TV panes
+// are skipped (their colors come from the TradingView widget). Individual M
+// buttons stay independent and the choice is remembered per symbol.
+function nativePanes(): ChartPane[] {
+  return state.panes.filter((p): p is ChartPane => p.kind === "native");
+}
+
+/** Keep the toolbar button in sync with the panes' actual state. */
+function syncMatrixBtn(): void {
+  const natives = nativePanes();
+  const on = natives.length > 0 && natives.every((p) => p.matrixMode);
+  matrixBtn.classList.toggle("matrix-on", on);
+  matrixBtn.setAttribute("aria-pressed", on ? "true" : "false");
+  matrixBtn.title = on
+    ? "Matrix colors ON for all native panes — click to turn off"
+    : "toggle Matrix neon-green colors on all native panes";
+}
+
+matrixBtn.addEventListener("click", () => {
+  const natives = nativePanes();
+  if (natives.length === 0) {
+    setStatus("Add a native pane first — TradingView panes can't be re-colored.");
+    return;
+  }
+  const turnOn = !natives.every((p) => p.matrixMode);
+  for (const p of natives) p.setMatrix(turnOn);
+  syncMatrixBtn();
+  setStatus(turnOn ? "Matrix colors ON — all native panes" : "Matrix colors OFF — all native panes");
+});
 
 // ─── layout application ───────────────────────────────────────────────
 // Default keeps the explicit spec rule: overflow panes stay alive but are HIDDEN.
@@ -324,6 +388,7 @@ function handlePaneRemoved(removedId: number): void {
   if (state.panes.length === 0) setStatus("All panes removed. Press N or + Pane / + TV.");
   applyLayout(state.layoutKey); // unhide any previously hidden panes
   saveSession();
+  syncMatrixBtn();
 }
 
 function makePane(id: number, symbol: string, timeframe: Timeframe, kind: PaneKind): WorkspacePane {
@@ -334,6 +399,7 @@ function makePane(id: number, symbol: string, timeframe: Timeframe, kind: PaneKi
     // so the new shape is immediately draggable instead of staying sticky
     onToolDone: () => applyTool("cross"),
     onConvert: (paneId: number, nextKind: PaneKind) => convertPane(paneId, nextKind),
+    onMatrixChanged: () => syncMatrixBtn(),
   };
   return kind === "tv"
     ? new TVPane(id, symbol, timeframe, cb)
@@ -365,9 +431,21 @@ function convertPane(id: number, kind: PaneKind): void {
   setStatus(kind === "tv"
     ? `${next.symbol} switched to the TradingView chart (TradingView's feed)`
     : `${next.symbol} switched to the built-in chart (local data feed)`);
+  syncMatrixBtn();
 }
 
 let booting = true;
+
+/** Find the smallest layout that can accommodate `count` panes. */
+function findBestLayout(count: number): string {
+  // Prefer layouts in order that make sense for the pane count
+  // For 1: 1×1; 2: 1×2 (horizontal) or 2×1 (vertical); 3-4: 2×2; 5-6: 3×2
+  if (count <= 1) return "1×1";
+  if (count === 2) return "1×2"; // default to horizontal (side-by-side) for 2
+  if (count <= 4) return "2×2";
+  if (count <= 6) return "3×2";
+  return "3×2"; // max supported
+}
 
 function addPane(
   symbol = symbolInput.value.trim().toUpperCase(),
@@ -386,19 +464,40 @@ function addPane(
   const panMode = state.panes[0]?.isPricePanMode() ?? false;
   pane.setPricePanMode(panMode);
   void pane.load();
-  applyLayout(state.layoutKey);
+
+  // Auto-switch to a layout that fits all panes when actively adding panes.
+  // The user is explicitly requesting more charts, so give them a proper grid.
+  // The "👁 Panes" button is for keeping a specific layout while seeing overflow.
+  const currentSlots = LAYOUTS[state.layoutKey].cols * LAYOUTS[state.layoutKey].rows;
+  const panesExceedLayout = state.panes.length > currentSlots;
+  
+  if (panesExceedLayout) {
+    const bestLayout = findBestLayout(state.panes.length);
+    if (bestLayout !== state.layoutKey) {
+      applyLayout(bestLayout);
+      // Update the toggle button glyph
+      const toggleLabel = document.querySelector(".layout-toggle-label");
+      if (toggleLabel) {
+        toggleLabel.innerHTML = "";
+        toggleLabel.append(currentLayoutGlyph(), document.createTextNode("Charts ▾"));
+      }
+      // Reset expandedHidden since we're now in a layout that fits everything
+      expandedHidden = false;
+      try { localStorage.setItem(VIS_KEY, "0"); } catch { /* ignore */ }
+      hiddenToggle.style.display = "none";
+      setStatus(`Auto-switched to ${LAYOUTS[bestLayout].label} for ${state.panes.length} chart(s)`);
+    } else {
+      applyLayout(state.layoutKey);
+    }
+  } else {
+    applyLayout(state.layoutKey);
+  }
+
   // phones stack panes vertically: bring the new chart into view
   if (!booting && window.matchMedia("(max-width: 640px)").matches) {
     pane.wrap.scrollIntoView({ block: "nearest", behavior: "smooth" });
   }
-  const slots = LAYOUTS[state.layoutKey].cols * LAYOUTS[state.layoutKey].rows;
-  if (!expandedHidden && state.panes.length > slots) {
-    // never let a new pane disappear silently: reveal the overflow row
-    expandedHidden = true;
-    try { localStorage.setItem(VIS_KEY, "1"); } catch { /* ignore */ }
-    applyLayout(state.layoutKey);
-    setStatus(`${s} ${timeframe} added — grid was full, revealing every pane (👁 Panes to hide overflow again)`);
-  }
+  syncMatrixBtn();
 }
 
 // ─── saved chart setups (named workspaces) ────────────────────────────

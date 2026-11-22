@@ -118,6 +118,38 @@ const DAYLIGHT: CanvasPalette = {
   macdHistDown: "rgba(217,58,58,0.55)",
 };
 
+/** Per-pane "Matrix" palette: neon green candles/volume/axes on near-black.
+ *  Opt-in via the M button in a native pane; the global theme is untouched. */
+const MATRIX: CanvasPalette = {
+  panel: "#020a04",
+  grid: "rgba(0,255,102,0.10)",
+  axisText: "rgba(0,255,102,0.66)",
+  axisTextDim: "rgba(0,255,102,0.42)",
+  dimText: "rgba(0,255,102,0.62)",
+  mutedText: "rgba(0,255,102,0.34)",
+  up: "#00ff66",
+  down: "#00b34a",
+  upFill: "rgba(0,255,102,0.9)",
+  downFill: "rgba(0,179,74,0.9)",
+  volUp: "rgba(0,255,102,0.38)",
+  volDown: "rgba(0,179,74,0.38)",
+  legendBg: "rgba(0,20,8,0.85)",
+  legendText: "#b6ffce",
+  crosshair: "rgba(0,255,102,0.55)",
+  priceTagBg: "#00ff66",
+  priceTagText: "#001b0a",
+  oscGuide: "rgba(0,255,102,0.12)",
+  alert: "#9dff00",
+  sma10: "#9dff00",
+  sma30: "#00ffcc",
+  ema12: "#00ff66",
+  rsi: "#39ff14",
+  macd: "#00ff66",
+  macdSignal: "#00ffcc",
+  macdHistUp: "rgba(0,255,102,0.6)",
+  macdHistDown: "rgba(0,179,74,0.6)",
+};
+
 const PALETTES: Record<ThemeId, CanvasPalette> = {
   midnight: MIDNIGHT,
   black: BLACK,
@@ -137,6 +169,37 @@ export function themeId(): ThemeId {
 
 export function palette(): CanvasPalette {
   return PALETTES[current];
+}
+
+/** The opt-in neon-green "Matrix" palette (independent of the global theme). */
+export function matrixPalette(): CanvasPalette {
+  return MATRIX;
+}
+
+// ─── Matrix-mode persistence (remembered per symbol) ──────────────────
+const MATRIX_KEY = "multi-chart:matrix-symbols:v1";
+
+function readMatrixSymbols(): string[] {
+  try {
+    const raw = localStorage.getItem(MATRIX_KEY);
+    const arr: unknown = raw ? JSON.parse(raw) : [];
+    return Array.isArray(arr) ? arr.filter((s): s is string => typeof s === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+/** True when this symbol was left in Matrix mode last time. */
+export function isMatrixSymbol(symbol: string): boolean {
+  return readMatrixSymbols().includes(symbol.toUpperCase());
+}
+
+/** Persist the Matrix on/off choice for one symbol. */
+export function setMatrixSymbol(symbol: string, on: boolean): void {
+  const sym = symbol.toUpperCase();
+  const set = new Set(readMatrixSymbols());
+  if (on) set.add(sym); else set.delete(sym);
+  try { localStorage.setItem(MATRIX_KEY, JSON.stringify([...set])); } catch { /* private mode */ }
 }
 
 export function setTheme(id: ThemeId): void {
